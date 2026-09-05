@@ -27,6 +27,11 @@ class MessageOut(BaseModel):
     created_at: str
 
 
+class SendMessageOut(BaseModel):
+    user: MessageOut
+    reply: MessageOut
+
+
 def get_db_client():
     return db.get_client()
 
@@ -40,13 +45,18 @@ def list_messages(client=Depends(get_db_client)) -> list[dict]:
     return db.fetch_messages(client)
 
 
-@app.post("/api/messages", response_model=MessageOut)
+@app.post("/api/messages", response_model=SendMessageOut)
 def send_message(
     body: MessageIn,
     db_client=Depends(get_db_client),
     llm_client=Depends(get_claude_client),
 ) -> dict:
-    db.insert_message(db_client, "user", body.content)
+    # Nothing is persisted until the reply succeeds, so a failed call
+    # leaves no orphaned user turn behind for the retry to duplicate.
     history = db.fetch_messages(db_client)
-    reply_text = claude_client.generate_reply(llm_client, history)
-    return db.insert_message(db_client, "assistant", reply_text)
+    pending = [*history, {"role": "user", "content": body.content}]
+    reply_text = claude_client.generate_reply(llm_client, pending)
+
+    user_message = db.insert_message(db_client, "user", body.content)
+    reply = db.insert_message(db_client, "assistant", reply_text)
+    return {"user": user_message, "reply": reply}

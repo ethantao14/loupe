@@ -19,11 +19,16 @@ export async function fetchMessages(): Promise<Message[]> {
   return (await parseOrThrow(response)) as Message[];
 }
 
-export async function sendMessage(content: string): Promise<Message> {
+export type SendResult = {
+  user: Message;
+  reply: Message;
+};
+
+export async function sendMessage(content: string): Promise<SendResult> {
   const response = await fetch(`${API_BASE}/api/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
   });
-  return (await parseOrThrow(response)) as Message;
+  return (await parseOrThrow(response)) as SendResult;
 }

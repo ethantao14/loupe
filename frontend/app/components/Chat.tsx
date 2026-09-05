@@ -7,26 +7,38 @@ import { fetchMessages, sendMessage, type Message } from "@/lib/api";
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     fetchMessages()
-      .then(setMessages)
-      .catch(() => setError("Could not load conversation history."));
+      .then((history) => {
+        if (!cancelled) setMessages(history);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Could not load conversation history.");
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     const content = draft.trim();
-    if (!content || isSending) return;
+    if (!content || isSending || isLoading) return;
 
     setDraft("");
     setIsSending(true);
     setError(null);
     try {
-      await sendMessage(content);
-      setMessages(await fetchMessages());
+      const { user, reply } = await sendMessage(content);
+      setMessages((current) => [...current, user, reply]);
     } catch {
       setError("Could not send that message.");
       setDraft(content);
@@ -68,7 +80,7 @@ export default function Chat() {
           />
           <button
             type="submit"
-            disabled={isSending}
+            disabled={isSending || isLoading}
             className="rounded-md bg-neutral-100 px-4 py-2 font-medium text-neutral-900 disabled:opacity-50"
           >
             Send

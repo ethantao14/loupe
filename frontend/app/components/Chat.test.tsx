@@ -30,19 +30,31 @@ describe("Chat", () => {
     expect(await screen.findByText("Hello there")).toBeInTheDocument();
   });
 
-  it("sends a message and shows the reply", async () => {
-    fetchMessages.mockResolvedValueOnce([]);
-    sendMessage.mockResolvedValue(message("2", "assistant", "Hi back"));
-    fetchMessages.mockResolvedValueOnce([
-      message("1", "user", "Hello"),
-      message("2", "assistant", "Hi back"),
-    ]);
+  it("sends a message and shows both turns", async () => {
+    fetchMessages.mockResolvedValue([]);
+    sendMessage.mockResolvedValue({
+      user: message("1", "user", "Hello"),
+      reply: message("2", "assistant", "Hi back"),
+    });
 
     render(<Chat />);
     await userEvent.type(screen.getByLabelText("Message"), "Hello");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(sendMessage).toHaveBeenCalledWith("Hello"));
+    expect(await screen.findByText("Hello")).toBeInTheDocument();
     expect(await screen.findByText("Hi back")).toBeInTheDocument();
+  });
+
+  it("keeps the draft when sending fails", async () => {
+    fetchMessages.mockResolvedValue([]);
+    sendMessage.mockRejectedValue(new Error("network"));
+
+    render(<Chat />);
+    await userEvent.type(screen.getByLabelText("Message"), "Hello");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Could not send that message.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Message")).toHaveValue("Hello");
   });
 });

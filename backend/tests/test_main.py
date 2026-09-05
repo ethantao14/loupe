@@ -1,7 +1,12 @@
+import pytest
 from fastapi.testclient import TestClient
 
-from app import db
+from app import claude_client, db
 from app.main import app, get_claude_client, get_db_client
+
+
+def raise_api_error(client, history):
+    raise RuntimeError("Claude API unavailable")
 
 
 class FakeDb:
@@ -71,6 +76,23 @@ def test_send_message_persists_and_replies(monkeypatch) -> None:
     response = client.post("/api/messages", json={"content": "Hello"})
 
     assert response.status_code == 200
-    assert response.json()["role"] == "assistant"
-    assert response.json()["content"] == "Hi there!"
+    body = response.json()
+    assert body["user"]["content"] == "Hello"
+    assert body["reply"]["role"] == "assistant"
+    assert body["reply"]["content"] == "Hi there!"
     assert [row["role"] for row in fake_db.rows] == ["user", "assistant"]
+
+
+def test_send_message_persists_nothing_when_reply_fails(monkeypatch) -> None:
+    fake_db = FakeDb()
+    monkeypatch.setattr(db, "fetch_messages", lambda client: client.fetch_messages())
+    monkeypatch.setattr(
+        db, "insert_message", lambda client, role, content: client.insert_message(role, content)
+    )
+    monkeypatch.setattr(claude_client, "generate_reply", raise_api_error)
+    client = make_client(fake_db)
+
+    with pytest.raises(RuntimeError):
+        client.post("/api/messages", json={"content": "Hello"})
+
+    assert fake_db.rows == []
