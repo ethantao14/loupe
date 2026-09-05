@@ -12,14 +12,20 @@ def get_client() -> Client:
 
 
 def fetch_messages(client: Client) -> list[dict]:
-    response = client.table(MESSAGES_TABLE).select("*").order("created_at").execute()
+    response = client.table(MESSAGES_TABLE).select("*").order("seq").execute()
     return cast(list[dict], response.data)
 
 
-def insert_message(client: Client, role: str, content: str) -> dict:
+def insert_exchange(client: Client, user_content: str, reply_content: str) -> list[dict]:
+    # One statement, so a turn is never half stored.
     response = (
         client.table(MESSAGES_TABLE)
-        .insert({"role": role, "content": content})
+        .insert(
+            [
+                {"role": "user", "content": user_content},
+                {"role": "assistant", "content": reply_content},
+            ]
+        )
         .execute()
     )
-    return cast(dict, response.data[0])
+    return cast(list[dict], response.data)

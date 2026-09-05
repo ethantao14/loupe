@@ -16,15 +16,18 @@ class FakeDb:
     def fetch_messages(self) -> list[dict]:
         return list(self.rows)
 
-    def insert_message(self, role: str, content: str) -> dict:
-        row = {
-            "id": str(len(self.rows) + 1),
-            "role": role,
-            "content": content,
-            "created_at": "2026-01-01T00:00:00Z",
-        }
-        self.rows.append(row)
-        return row
+    def insert_exchange(self, user_content: str, reply_content: str) -> list[dict]:
+        inserted = []
+        for role, content in (("user", user_content), ("assistant", reply_content)):
+            row = {
+                "id": str(len(self.rows) + 1),
+                "role": role,
+                "content": content,
+                "created_at": "2026-01-01T00:00:00Z",
+            }
+            self.rows.append(row)
+            inserted.append(row)
+        return inserted
 
 
 class FakeContentBlock:
@@ -48,7 +51,13 @@ class FakeClaudeClient:
             return FakeClaudeResponse("Hi there!")
 
 
-def make_client(fake_db: FakeDb) -> TestClient:
+def make_client(fake_db: FakeDb, monkeypatch) -> TestClient:
+    monkeypatch.setattr(db, "fetch_messages", lambda client: client.fetch_messages())
+    monkeypatch.setattr(
+        db,
+        "insert_exchange",
+        lambda client, user, reply: client.insert_exchange(user, reply),
+    )
     app.dependency_overrides[get_db_client] = lambda: fake_db
     app.dependency_overrides[get_claude_client] = lambda: FakeClaudeClient()
     return TestClient(app)
@@ -56,8 +65,7 @@ def make_client(fake_db: FakeDb) -> TestClient:
 
 def test_list_messages_empty(monkeypatch) -> None:
     fake_db = FakeDb()
-    monkeypatch.setattr(db, "fetch_messages", lambda client: client.fetch_messages())
-    client = make_client(fake_db)
+    client = make_client(fake_db, monkeypatch)
 
     response = client.get("/api/messages")
 
@@ -67,11 +75,7 @@ def test_list_messages_empty(monkeypatch) -> None:
 
 def test_send_message_persists_and_replies(monkeypatch) -> None:
     fake_db = FakeDb()
-    monkeypatch.setattr(db, "fetch_messages", lambda client: client.fetch_messages())
-    monkeypatch.setattr(
-        db, "insert_message", lambda client, role, content: client.insert_message(role, content)
-    )
-    client = make_client(fake_db)
+    client = make_client(fake_db, monkeypatch)
 
     response = client.post("/api/messages", json={"content": "Hello"})
 
@@ -85,12 +89,8 @@ def test_send_message_persists_and_replies(monkeypatch) -> None:
 
 def test_send_message_persists_nothing_when_reply_fails(monkeypatch) -> None:
     fake_db = FakeDb()
-    monkeypatch.setattr(db, "fetch_messages", lambda client: client.fetch_messages())
-    monkeypatch.setattr(
-        db, "insert_message", lambda client, role, content: client.insert_message(role, content)
-    )
     monkeypatch.setattr(claude_client, "generate_reply", raise_api_error)
-    client = make_client(fake_db)
+    client = make_client(fake_db, monkeypatch)
 
     with pytest.raises(RuntimeError):
         client.post("/api/messages", json={"content": "Hello"})

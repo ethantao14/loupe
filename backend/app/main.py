@@ -57,6 +57,5 @@ def send_message(
     pending = [*history, {"role": "user", "content": body.content}]
     reply_text = claude_client.generate_reply(llm_client, pending)
 
-    user_message = db.insert_message(db_client, "user", body.content)
-    reply = db.insert_message(db_client, "assistant", reply_text)
+    user_message, reply = db.insert_exchange(db_client, body.content, reply_text)
     return {"user": user_message, "reply": reply}
