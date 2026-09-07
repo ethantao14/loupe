@@ -4,7 +4,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app import claude_client, db
+from app import agent, claude_client, db
 
 app = FastAPI(title="Loupe API")
 
@@ -55,7 +55,7 @@ def send_message(
     # leaves no orphaned user turn behind for the retry to duplicate.
     history = db.fetch_messages(db_client)
     pending = [*history, {"role": "user", "content": body.content}]
-    reply_text = claude_client.generate_reply(llm_client, pending)
+    reply_text = agent.run_turn(llm_client, pending)
 
     user_message, reply = db.insert_exchange(db_client, body.content, reply_text)
     return {"user": user_message, "reply": reply}
