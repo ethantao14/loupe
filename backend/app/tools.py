@@ -53,9 +53,10 @@ class Target:
     @property
     def host_header(self) -> str:
         default_port = 443 if self.url.startswith("https") else 80
-        if self.port == default_port:
-            return self.ascii_host
-        return f"{self.ascii_host}:{self.port}"
+        host = self.ascii_host
+        if ":" in host:
+            host = f"[{host}]"
+        return host if self.port == default_port else f"{host}:{self.port}"
 
     @property
     def ascii_host(self) -> str:
@@ -78,7 +79,7 @@ class Target:
 def _resolve_public_address(host: str, port: int) -> str:
     try:
         resolved = socket.getaddrinfo(host, port)
-    except socket.gaierror as error:
+    except (socket.gaierror, UnicodeError) as error:
         raise ToolError(f"Could not resolve host: {host}") from error
 
     addresses = [str(entry[4][0]) for entry in resolved]
@@ -111,7 +112,13 @@ def _build_target(url: str) -> Target:
 
 
 def _make_client() -> httpx.Client:
-    return httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS, follow_redirects=False)
+    timeout = httpx.Timeout(
+        connect=REQUEST_TIMEOUT_SECONDS,
+        read=REQUEST_TIMEOUT_SECONDS,
+        write=REQUEST_TIMEOUT_SECONDS,
+        pool=REQUEST_TIMEOUT_SECONDS,
+    )
+    return httpx.Client(timeout=timeout, follow_redirects=False)
 
 
 def _check_deadline(deadline: float) -> None:
@@ -178,7 +185,12 @@ def fetch_url(url: str) -> str:
                 request = client.build_request(
                     "GET",
                     target.pinned_url,
-                    headers={"Host": target.host_header},
+                    # Identity encoding, so a small compressed body cannot
+                    # expand past the byte budget before we can trim it.
+                    headers={
+                        "Host": target.host_header,
+                        "Accept-Encoding": "identity",
+                    },
                     extensions={"sni_hostname": target.ascii_host},
                 )
                 response = client.send(request, stream=True)

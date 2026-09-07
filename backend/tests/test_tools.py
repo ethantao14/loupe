@@ -207,6 +207,38 @@ def test_oversized_single_chunk_is_truncated(monkeypatch):
     assert len(tools.fetch_url("https://example.com")) == tools.MAX_CONTENT_CHARS
 
 
+def test_brackets_ipv6_literals_in_host_header(monkeypatch):
+    seen = {}
+
+    def handler(request):
+        seen["host"] = request.headers["Host"]
+        return httpx.Response(200, text="<p>ok</p>")
+
+    use_fake_network(monkeypatch, handler, address="2606:4700:4700::1111")
+    tools.fetch_url("http://[2606:4700:4700::1111]/")
+
+    assert seen["host"] == "[2606:4700:4700::1111]"
+
+
+def test_asks_for_identity_encoding(monkeypatch):
+    seen = {}
+
+    def handler(request):
+        seen["encoding"] = request.headers["Accept-Encoding"]
+        return httpx.Response(200, text="<p>ok</p>")
+
+    use_fake_network(monkeypatch, handler)
+    tools.fetch_url("https://example.com")
+
+    assert seen["encoding"] == "identity"
+
+
+def test_overlong_hostname_label_is_a_tool_error():
+    result = tools.run_tool("fetch_url", {"url": f"http://{'a' * 100}.example/"})
+
+    assert "Could not resolve host" in result
+
+
 def test_deadline_is_checked_before_requesting(monkeypatch):
     use_fake_network(monkeypatch, lambda request: httpx.Response(200, text="<p>ok</p>"))
     monkeypatch.setattr(tools, "TOTAL_DEADLINE_SECONDS", -1)
