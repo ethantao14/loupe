@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import claude_client, db
+from app import agent, db
 from app.main import app, get_claude_client, get_db_client
 
 
@@ -38,6 +38,7 @@ class FakeContentBlock:
 
 class FakeClaudeResponse:
     def __init__(self, text: str) -> None:
+        self.stop_reason = "end_turn"
         self.content = [
             FakeContentBlock("thinking", ""),
             FakeContentBlock("text", text),
@@ -89,7 +90,7 @@ def test_send_message_persists_and_replies(monkeypatch) -> None:
 
 def test_send_message_persists_nothing_when_reply_fails(monkeypatch) -> None:
     fake_db = FakeDb()
-    monkeypatch.setattr(claude_client, "generate_reply", raise_api_error)
+    monkeypatch.setattr(agent, "run_turn", raise_api_error)
     client = make_client(fake_db, monkeypatch)
 
     with pytest.raises(RuntimeError):
