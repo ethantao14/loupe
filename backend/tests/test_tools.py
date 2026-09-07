@@ -1,3 +1,5 @@
+import time
+
 import httpx
 import pytest
 
@@ -160,3 +162,53 @@ def test_caps_response_size(monkeypatch):
 def test_raises_on_unresolvable_host():
     with pytest.raises(tools.ToolError, match="Could not resolve host"):
         tools._resolve_public_address("not-a-real-host.invalid", 80)
+
+
+def test_rejects_shared_address_space(monkeypatch):
+    # 100.64.0.0/10 is neither private nor reserved, but it is not globally
+    # routable and reaches internal services on some clouds.
+    monkeypatch.setattr(
+        tools.socket, "getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("100.100.100.200", 80))]
+    )
+
+    result = tools.run_tool("fetch_url", {"url": "http://sneaky.example"})
+
+    assert "Refusing to fetch a private address" in result
+
+
+def test_extraction_is_linear_on_hostile_markup():
+    # Unclosed tags used to force quadratic backtracking.
+    hostile = "<" * 200_000
+
+    start = time.monotonic()
+    tools._extract_text(hostile)
+
+    assert time.monotonic() - start < 2
+
+
+def test_internationalized_host_is_converted_for_headers(monkeypatch):
+    seen = {}
+
+    def handler(request):
+        seen["host"] = request.headers["Host"]
+        return httpx.Response(200, text="<p>ok</p>")
+
+    use_fake_network(monkeypatch, handler)
+    tools.fetch_url("https://bücher.example/")
+
+    assert seen["host"] == "xn--bcher-kva.example"
+
+
+def test_oversized_single_chunk_is_truncated(monkeypatch):
+    # One decompressed chunk larger than the whole budget.
+    huge = b"<p>" + (b"x" * (tools.MAX_RESPONSE_BYTES * 2)) + b"</p>"
+    use_fake_network(monkeypatch, lambda request: httpx.Response(200, content=huge))
+
+    assert len(tools.fetch_url("https://example.com")) == tools.MAX_CONTENT_CHARS
+
+
+def test_deadline_is_checked_before_requesting(monkeypatch):
+    use_fake_network(monkeypatch, lambda request: httpx.Response(200, text="<p>ok</p>"))
+    monkeypatch.setattr(tools, "TOTAL_DEADLINE_SECONDS", -1)
+
+    assert "Took too long" in tools.run_tool("fetch_url", {"url": "https://example.com"})

@@ -1,8 +1,8 @@
-import html
 import ipaddress
 import re
 import socket
 import time
+from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -53,7 +53,20 @@ class Target:
     @property
     def host_header(self) -> str:
         default_port = 443 if self.url.startswith("https") else 80
-        return self.host if self.port == default_port else f"{self.host}:{self.port}"
+        if self.port == default_port:
+            return self.ascii_host
+        return f"{self.ascii_host}:{self.port}"
+
+    @property
+    def ascii_host(self) -> str:
+        # Headers and SNI must be ASCII, so an internationalized name is
+        # converted rather than raising deep inside the HTTP client.
+        if self.host.isascii():
+            return self.host
+        try:
+            return self.host.encode("idna").decode("ascii")
+        except UnicodeError as error:
+            raise ToolError(f"Not a valid hostname: {self.host}") from error
 
     @property
     def pinned_url(self) -> str:
@@ -71,13 +84,9 @@ def _resolve_public_address(host: str, port: int) -> str:
     addresses = [str(entry[4][0]) for entry in resolved]
     for candidate in addresses:
         address = ipaddress.ip_address(candidate)
-        if (
-            address.is_private
-            or address.is_loopback
-            or address.is_link_local
-            or address.is_reserved
-            or address.is_multicast
-        ):
+        # is_global covers loopback, private, link-local, reserved and shared
+        # address space in one check, so carrier-grade NAT ranges cannot slip past.
+        if not address.is_global or address.is_multicast:
             raise ToolError(f"Refusing to fetch a private address: {host}")
     return addresses[0]
 
@@ -105,25 +114,54 @@ def _make_client() -> httpx.Client:
     return httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS, follow_redirects=False)
 
 
+def _check_deadline(deadline: float) -> None:
+    if time.monotonic() > deadline:
+        raise ToolError("Took too long to fetch that page.")
+
+
 def _read_capped(response: httpx.Response, deadline: float) -> str:
     chunks: list[bytes] = []
-    total = 0
+    remaining = MAX_RESPONSE_BYTES
     for chunk in response.iter_bytes():
-        if time.monotonic() > deadline:
-            raise ToolError("Took too long to download that page.")
-        chunks.append(chunk)
-        total += len(chunk)
-        if total >= MAX_RESPONSE_BYTES:
+        _check_deadline(deadline)
+        # Chunks arrive decompressed, so one chunk can exceed the whole budget.
+        chunks.append(chunk[:remaining])
+        remaining -= min(len(chunk), remaining)
+        if remaining <= 0:
             break
     return b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
 
 
+class _TextExtractor(HTMLParser):
+    """Collects visible text. A parser rather than a regex, because regex tag
+    stripping degrades badly on hostile markup."""
+
+    SKIPPED_TAGS = {"script", "style"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag in self.SKIPPED_TAGS:
+            self._skip_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self.SKIPPED_TAGS and self._skip_depth:
+            self._skip_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip_depth:
+            self.parts.append(data)
+
+
 def _extract_text(document: str) -> str:
-    without_code = re.sub(
-        r"<(script|style)\b.*?</\1>", " ", document, flags=re.DOTALL | re.IGNORECASE
-    )
-    without_tags = re.sub(r"<[^>]+>", " ", without_code)
-    return re.sub(r"\s+", " ", html.unescape(without_tags)).strip()
+    parser = _TextExtractor()
+    parser.feed(document)
+    parser.close()
+    # Joined with a space so text from separate elements does not run together.
+    return re.sub(r"\s+", " ", " ".join(parser.parts)).strip()
 
 
 def fetch_url(url: str) -> str:
@@ -135,15 +173,17 @@ def fetch_url(url: str) -> str:
                 # Every hop is re-resolved and re-vetted, and the connection is
                 # pinned to the address we checked, so neither a redirect nor a
                 # second DNS answer can reach a private host.
+                _check_deadline(deadline)
                 target = _build_target(url)
                 request = client.build_request(
                     "GET",
                     target.pinned_url,
                     headers={"Host": target.host_header},
-                    extensions={"sni_hostname": target.host},
+                    extensions={"sni_hostname": target.ascii_host},
                 )
                 response = client.send(request, stream=True)
                 try:
+                    _check_deadline(deadline)
                     if response.is_redirect:
                         location = response.headers.get("location")
                         if not location:
