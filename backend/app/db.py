@@ -1,0 +1,31 @@
+from typing import cast
+
+from supabase import Client, create_client
+
+from app.config import SUPABASE_SERVICE_KEY, SUPABASE_URL
+
+MESSAGES_TABLE = "messages"
+
+
+def get_client() -> Client:
+    return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+
+def fetch_messages(client: Client) -> list[dict]:
+    response = client.table(MESSAGES_TABLE).select("*").order("seq").execute()
+    return cast(list[dict], response.data)
+
+
+def insert_exchange(client: Client, user_content: str, reply_content: str) -> list[dict]:
+    # One statement, so a turn is never half stored.
+    response = (
+        client.table(MESSAGES_TABLE)
+        .insert(
+            [
+                {"role": "user", "content": user_content},
+                {"role": "assistant", "content": reply_content},
+            ]
+        )
+        .execute()
+    )
+    return cast(list[dict], response.data)
