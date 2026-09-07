@@ -20,16 +20,31 @@ class MessageIn(BaseModel):
     content: str
 
 
+class StepOut(BaseModel):
+    id: str
+    kind: str
+    tool_name: str | None = None
+    detail: str
+
+
 class MessageOut(BaseModel):
     id: str
     role: str
     content: str
     created_at: str
+    steps: list[StepOut] = []
 
 
 class SendMessageOut(BaseModel):
     user: MessageOut
     reply: MessageOut
+
+
+def _with_steps(messages: list[dict], steps: list[dict]) -> list[dict]:
+    by_message: dict[str, list[dict]] = {}
+    for step in steps:
+        by_message.setdefault(step["message_id"], []).append(step)
+    return [{**message, "steps": by_message.get(message["id"], [])} for message in messages]
 
 
 def get_db_client():
@@ -42,7 +57,9 @@ def get_claude_client():
 
 @app.get("/api/messages", response_model=list[MessageOut])
 def list_messages(client=Depends(get_db_client)) -> list[dict]:
-    return db.fetch_messages(client)
+    messages = db.fetch_messages(client)
+    steps = db.fetch_steps(client, [m["id"] for m in messages if m["role"] == "assistant"])
+    return _with_steps(messages, steps)
 
 
 @app.post("/api/messages", response_model=SendMessageOut)

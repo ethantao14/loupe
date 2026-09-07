@@ -1,3 +1,5 @@
+from dataclasses import dataclass, field
+
 import anthropic
 from anthropic.types import MessageParam, ToolResultBlockParam
 
@@ -13,6 +15,22 @@ MAX_ITERATIONS = 5
 OUT_OF_STEPS_REPLY = (
     "I couldn't finish that within my tool-use limit. Try narrowing the question."
 )
+MAX_DETAIL_CHARS = 2000
+
+
+@dataclass
+class Step:
+    """One thing the agent did, in the order it happened."""
+
+    kind: str
+    detail: str
+    tool_name: str | None = None
+
+
+@dataclass
+class TurnResult:
+    reply: str
+    steps: list[Step] = field(default_factory=list)
 
 
 def _first_text(response) -> str:
@@ -22,11 +40,18 @@ def _first_text(response) -> str:
     return ""
 
 
-def run_turn(client: anthropic.Anthropic, history: list[dict]) -> str:
-    """Run one assistant turn, letting the model call tools until it answers."""
+def _shorten(text: str) -> str:
+    if len(text) <= MAX_DETAIL_CHARS:
+        return text
+    return f"{text[:MAX_DETAIL_CHARS]}... [truncated]"
+
+
+def run_turn(client: anthropic.Anthropic, history: list[dict]) -> TurnResult:
+    """Run one assistant turn, recording each step the model and tools take."""
     messages: list[MessageParam] = [
         {"role": m["role"], "content": m["content"]} for m in history
     ]
+    steps: list[Step] = []
 
     for _ in range(MAX_ITERATIONS):
         response = client.messages.create(
@@ -37,19 +62,40 @@ def run_turn(client: anthropic.Anthropic, history: list[dict]) -> str:
             messages=messages,
         )
 
+        for block in response.content:
+            if block.type == "thinking" and block.thinking:
+                steps.append(Step(kind="thinking", detail=_shorten(block.thinking)))
+            elif block.type == "text" and block.text:
+                kind = "answer" if response.stop_reason != "tool_use" else "thinking"
+                steps.append(Step(kind=kind, detail=_shorten(block.text)))
+
         if response.stop_reason != "tool_use":
-            return _first_text(response)
+            return TurnResult(reply=_first_text(response), steps=steps)
 
         messages.append({"role": "assistant", "content": response.content})
-        results: list[ToolResultBlockParam] = [
-            {
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": tools.run_tool(block.name, block.input),
-            }
-            for block in response.content
-            if block.type == "tool_use"
-        ]
+        results: list[ToolResultBlockParam] = []
+        for block in response.content:
+            if block.type != "tool_use":
+                continue
+            steps.append(
+                Step(
+                    kind="tool_call",
+                    tool_name=block.name,
+                    detail=_shorten(str(block.input)),
+                )
+            )
+            output = tools.run_tool(block.name, block.input)
+            steps.append(
+                Step(kind="tool_result", tool_name=block.name, detail=_shorten(output))
+            )
+            results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": output,
+                }
+            )
         messages.append({"role": "user", "content": results})
 
-    return OUT_OF_STEPS_REPLY
+    steps.append(Step(kind="answer", detail=OUT_OF_STEPS_REPLY))
+    return TurnResult(reply=OUT_OF_STEPS_REPLY, steps=steps)
