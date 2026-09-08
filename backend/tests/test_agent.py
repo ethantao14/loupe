@@ -1,3 +1,7 @@
+from copy import deepcopy
+
+import pytest
+
 from app import agent, tools
 
 
@@ -25,7 +29,7 @@ class ScriptedClient:
         self.messages = self
 
     def create(self, **kwargs):
-        self.requests.append(kwargs)
+        self.requests.append(deepcopy(kwargs))
         return self.responses.pop(0)
 
 
@@ -81,6 +85,45 @@ def test_tools_are_offered_to_the_model():
     agent.run_turn(client, [{"role": "user", "content": "Hi"}])
 
     assert client.requests[0]["tools"] == tools.TOOLS
+
+
+def test_interleaved_text_and_tools_preserve_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        tools, "run_tool", lambda name, tool_input: f"Result {tool_input['label']}"
+    )
+    response = Response(
+        "tool_use",
+        [
+            Block("text", text="Text A"),
+            Block("tool_use", name="tool_a", block_id="tu_a", tool_input={"label": "A"}),
+            Block("text", text="Text B"),
+            Block("tool_use", name="tool_b", block_id="tu_b", tool_input={"label": "B"}),
+        ],
+    )
+    client = ScriptedClient([response, text_response("Final answer")])
+
+    result = agent.run_turn(client, [{"role": "user", "content": "Run both tools"}])
+
+    assert result.reply == "Final answer"
+    assert result.steps == [
+        agent.Step(kind="thinking", detail="Text A"),
+        agent.Step(kind="tool_call", tool_name="tool_a", detail="{'label': 'A'}"),
+        agent.Step(kind="tool_result", tool_name="tool_a", detail="Result A"),
+        agent.Step(kind="thinking", detail="Text B"),
+        agent.Step(kind="tool_call", tool_name="tool_b", detail="{'label': 'B'}"),
+        agent.Step(kind="tool_result", tool_name="tool_b", detail="Result B"),
+        agent.Step(kind="answer", detail="Final answer"),
+    ]
+    assert len(client.requests) == 2
+    sent = client.requests[1]["messages"]
+    assert [message["role"] for message in sent] == ["user", "assistant", "user"]
+    assert [vars(block) for block in sent[1]["content"]] == [
+        vars(block) for block in response.content
+    ]
+    assert sent[2]["content"] == [
+        {"type": "tool_result", "tool_use_id": "tu_a", "content": "Result A"},
+        {"type": "tool_result", "tool_use_id": "tu_b", "content": "Result B"},
+    ]
 
 
 def test_stops_after_iteration_limit(monkeypatch):

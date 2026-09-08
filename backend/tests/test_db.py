@@ -46,6 +46,44 @@ def test_fetch_steps_without_messages_skips_query() -> None:
     client.table.assert_not_called()
 
 
+def test_fetch_steps_batches_ids_and_paginates_in_order() -> None:
+    message_ids = [f"assistant-{index}" for index in range(2003)]
+    rows = [
+        {"message_id": message_id, "seq": step_index * len(message_ids) + index}
+        for step_index in range(6)
+        for index, message_id in enumerate(message_ids)
+    ]
+    client = Mock(spec=Client)
+    query = client.table.return_value
+    query.select.return_value = query
+    query.in_.return_value = query
+    query.order.return_value = query
+    query.range.return_value = query
+
+    def execute() -> SimpleNamespace:
+        batch = set(query.in_.call_args.args[1])
+        start, end = query.range.call_args.args
+        batch_rows = [row for row in rows if row["message_id"] in batch]
+        return SimpleNamespace(data=batch_rows[start : end + 1])
+
+    query.execute.side_effect = execute
+
+    result = db.fetch_steps(client, message_ids)
+
+    assert result == rows
+    expected_filters = []
+    expected_ranges = []
+    for start in range(0, len(message_ids), 200):
+        batch = message_ids[start : start + 200]
+        for offset in range(0, len(batch) * 6 + 1, 1000):
+            expected_filters.append(call("message_id", batch))
+            expected_ranges.append(call(offset, offset + 999))
+    assert query.in_.call_args_list == expected_filters
+    assert query.range.call_args_list == expected_ranges
+    assert query.order.call_args_list == [call("seq")] * len(expected_filters)
+    assert query.execute.call_count == len(expected_filters)
+
+
 @pytest.mark.parametrize(
     "steps",
     [

@@ -7,6 +7,7 @@ from app.config import SUPABASE_SERVICE_KEY, SUPABASE_URL
 MESSAGES_TABLE = "messages"
 STEPS_TABLE = "steps"
 PAGE_SIZE = 1000
+MESSAGE_ID_BATCH_SIZE = 200
 
 
 def get_client() -> Client:
@@ -33,19 +34,24 @@ def fetch_steps(client: Client, message_ids: list[str]) -> list[dict]:
     if not message_ids:
         return []
     steps: list[dict] = []
-    while True:
-        response = (
-            client.table(STEPS_TABLE)
-            .select("*")
-            .in_("message_id", message_ids)
-            .order("seq")
-            .range(len(steps), len(steps) + PAGE_SIZE - 1)
-            .execute()
-        )
-        page = cast(list[dict], response.data)
-        steps.extend(page)
-        if len(page) < PAGE_SIZE:
-            return steps
+    for start in range(0, len(message_ids), MESSAGE_ID_BATCH_SIZE):
+        batch = message_ids[start : start + MESSAGE_ID_BATCH_SIZE]
+        offset = 0
+        while True:
+            response = (
+                client.table(STEPS_TABLE)
+                .select("*")
+                .in_("message_id", batch)
+                .order("seq")
+                .range(offset, offset + PAGE_SIZE - 1)
+                .execute()
+            )
+            page = cast(list[dict], response.data)
+            steps.extend(page)
+            if len(page) < PAGE_SIZE:
+                break
+            offset += PAGE_SIZE
+    return sorted(steps, key=lambda step: step["seq"])
 
 
 def insert_exchange_with_steps(

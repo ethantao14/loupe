@@ -33,13 +33,6 @@ class TurnResult:
     steps: list[Step] = field(default_factory=list)
 
 
-def _first_text(response) -> str:
-    for block in response.content:
-        if block.type == "text":
-            return block.text
-    return ""
-
-
 def _shorten(text: str) -> str:
     if len(text) <= MAX_DETAIL_CHARS:
         return text
@@ -62,39 +55,42 @@ def run_turn(client: anthropic.Anthropic, history: list[dict]) -> TurnResult:
             messages=messages,
         )
 
+        is_final = response.stop_reason != "tool_use"
+        reply: str | None = None
+        results: list[ToolResultBlockParam] = []
         for block in response.content:
             if block.type == "thinking" and block.thinking:
                 steps.append(Step(kind="thinking", detail=_shorten(block.thinking)))
-            elif block.type == "text" and block.text:
-                kind = "answer" if response.stop_reason != "tool_use" else "thinking"
-                steps.append(Step(kind=kind, detail=_shorten(block.text)))
+            elif block.type == "text":
+                if reply is None:
+                    reply = block.text
+                if block.text:
+                    kind = "answer" if is_final else "thinking"
+                    steps.append(Step(kind=kind, detail=_shorten(block.text)))
+            elif block.type == "tool_use":
+                steps.append(
+                    Step(
+                        kind="tool_call",
+                        tool_name=block.name,
+                        detail=_shorten(str(block.input)),
+                    )
+                )
+                output = tools.run_tool(block.name, block.input)
+                steps.append(
+                    Step(kind="tool_result", tool_name=block.name, detail=_shorten(output))
+                )
+                results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": output,
+                    }
+                )
 
-        if response.stop_reason != "tool_use":
-            return TurnResult(reply=_first_text(response), steps=steps)
+        if is_final:
+            return TurnResult(reply=reply or "", steps=steps)
 
         messages.append({"role": "assistant", "content": response.content})
-        results: list[ToolResultBlockParam] = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
-            steps.append(
-                Step(
-                    kind="tool_call",
-                    tool_name=block.name,
-                    detail=_shorten(str(block.input)),
-                )
-            )
-            output = tools.run_tool(block.name, block.input)
-            steps.append(
-                Step(kind="tool_result", tool_name=block.name, detail=_shorten(output))
-            )
-            results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": output,
-                }
-            )
         messages.append({"role": "user", "content": results})
 
     steps.append(Step(kind="answer", detail=OUT_OF_STEPS_REPLY))
