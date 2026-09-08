@@ -8,7 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from app import sandbox, tools
+from app import config, sandbox, tools
+
+
+@pytest.fixture(autouse=True)
+def enable_code_execution(monkeypatch):
+    """The tool ships disabled, so these tests turn it on explicitly."""
+    monkeypatch.setattr(config, "ENABLE_CODE_EXECUTION", True)
 
 
 def test_run_python_with_real_resource_limits() -> None:
@@ -262,10 +268,25 @@ def test_fails_closed_when_mandatory_limits_cannot_be_applied(
 
 def test_run_tool_dispatches():
     assert tools.run_tool("run_python", {"code": "print(6 * 7)"}) == "42\n"
-    assert tools.RUN_PYTHON_TOOL in tools.TOOLS
+    assert tools.RUN_PYTHON_TOOL in tools.available_tools()
     assert tools.RUN_PYTHON_TOOL["input_schema"]["required"] == ["code"]
 
 
 @pytest.mark.parametrize("tool_input", [{}, {"code": None}, {"code": 123}])
 def test_run_tool_rejects_invalid_code(tool_input):
     assert tools.run_tool("run_python", tool_input) == "Error: code must be a string."
+
+
+def test_tool_is_withheld_unless_enabled(monkeypatch):
+    monkeypatch.setattr(config, "ENABLE_CODE_EXECUTION", False)
+
+    assert tools.RUN_PYTHON_TOOL not in tools.available_tools()
+    assert tools.FETCH_URL_TOOL in tools.available_tools()
+
+
+def test_disabled_tool_refuses_to_run(monkeypatch):
+    monkeypatch.setattr(config, "ENABLE_CODE_EXECUTION", False)
+
+    assert tools.run_tool("run_python", {"code": "print(1)"}) == (
+        "Error: The run_python tool is disabled."
+    )

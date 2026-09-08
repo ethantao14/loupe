@@ -8,6 +8,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from anthropic.types import ToolParam
 
+from app import config
 from app.sandbox import run_python
 
 MAX_CONTENT_CHARS = 4000
@@ -53,7 +54,11 @@ RUN_PYTHON_TOOL: ToolParam = {
     "strict": True,
 }
 
-TOOLS: list[ToolParam] = [FETCH_URL_TOOL, RUN_PYTHON_TOOL]
+def available_tools() -> list[ToolParam]:
+    """Code execution is offered only when it has been deliberately enabled."""
+    if config.ENABLE_CODE_EXECUTION:
+        return [FETCH_URL_TOOL, RUN_PYTHON_TOOL]
+    return [FETCH_URL_TOOL]
 
 
 class ToolError(Exception):
@@ -239,6 +244,8 @@ def run_tool(name: str, tool_input: dict) -> str:
         if name == "fetch_url":
             return fetch_url(tool_input["url"])
         if name == "run_python":
+            if not config.ENABLE_CODE_EXECUTION:
+                raise ToolError("The run_python tool is disabled.")
             code = tool_input.get("code")
             if not isinstance(code, str):
                 raise ToolError("code must be a string.")
