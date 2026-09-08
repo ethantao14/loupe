@@ -8,6 +8,8 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from anthropic.types import ToolParam
 
+from app.sandbox import run_python
+
 MAX_CONTENT_CHARS = 4000
 MAX_RESPONSE_BYTES = 2_000_000
 MAX_REDIRECTS = 3
@@ -34,7 +36,24 @@ FETCH_URL_TOOL: ToolParam = {
     "strict": True,
 }
 
-TOOLS: list[ToolParam] = [FETCH_URL_TOOL]
+RUN_PYTHON_TOOL: ToolParam = {
+    "name": "run_python",
+    "description": (
+        "Run Python code for calculations or data processing and return stdout and stderr. "
+        "Execution has resource and time limits and uses a disposable working directory."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "code": {"type": "string", "description": "Python source code to execute."}
+        },
+        "required": ["code"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+TOOLS: list[ToolParam] = [FETCH_URL_TOOL, RUN_PYTHON_TOOL]
 
 
 class ToolError(Exception):
@@ -219,6 +238,11 @@ def run_tool(name: str, tool_input: dict) -> str:
     try:
         if name == "fetch_url":
             return fetch_url(tool_input["url"])
+        if name == "run_python":
+            code = tool_input.get("code")
+            if not isinstance(code, str):
+                raise ToolError("code must be a string.")
+            return run_python(code)
         raise ToolError(f"Unknown tool: {name}")
     except ToolError as error:
         return f"Error: {error}"
