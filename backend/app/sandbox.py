@@ -2,6 +2,8 @@
 Memory is capped only where supported by the platform (Linux yes, macOS no).
 A disposable cwd limits relative filesystem reach, but absolute paths and parent
 directories remain accessible. This is not a container and network access is allowed.
+Code that detaches into its own session escapes the process group kill and can
+outlive the deadline. Containing all of that needs a real execution boundary.
 """
 
 import os
