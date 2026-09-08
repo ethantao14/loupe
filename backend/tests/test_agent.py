@@ -84,7 +84,7 @@ def test_tools_are_offered_to_the_model():
 
     agent.run_turn(client, [{"role": "user", "content": "Hi"}])
 
-    assert client.requests[0]["tools"] == tools.TOOLS
+    assert client.requests[0]["tools"] == tools.available_tools()
 
 
 def test_interleaved_text_and_tools_preserve_order(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -51,7 +51,7 @@ def run_turn(client: anthropic.Anthropic, history: list[dict]) -> TurnResult:
             model=CLAUDE_MODEL,
             max_tokens=16000,
             system=SYSTEM_PROMPT,
-            tools=tools.TOOLS,
+            tools=tools.available_tools(),
             messages=messages,
         )
 

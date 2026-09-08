@@ -1,0 +1,108 @@
+"""Always bound CPU time, file size, wall clock and captured output; omit credentials.
+Memory is capped only where supported by the platform (Linux yes, macOS no).
+A disposable cwd limits relative filesystem reach, but absolute paths and parent
+directories remain accessible. This is not a container and network access is allowed.
+Code that detaches into its own session escapes the process group kill and can
+outlive the deadline. Containing all of that needs a real execution boundary.
+"""
+
+import os
+import resource
+import selectors
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+
+CPU_LIMIT_SECONDS = 2
+MEMORY_LIMIT_BYTES = 512 * 1024 * 1024
+FILE_SIZE_LIMIT_BYTES = 1024 * 1024
+WALL_TIMEOUT_SECONDS = 5
+MAX_OUTPUT_CHARS = 4000
+
+
+def _apply_limits() -> None:
+    resource.setrlimit(resource.RLIMIT_CPU, (CPU_LIMIT_SECONDS, CPU_LIMIT_SECONDS + 1))
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (MEMORY_LIMIT_BYTES, MEMORY_LIMIT_BYTES))
+    except (ValueError, OSError):
+        pass
+    resource.setrlimit(resource.RLIMIT_FSIZE, (FILE_SIZE_LIMIT_BYTES, FILE_SIZE_LIMIT_BYTES))
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+
+def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
+def _format_output(output: bytearray, note: str) -> str:
+    text = output.decode("utf-8", errors="replace")
+    prefix = f"Error: {note}\n" if note else ""
+    available = max(0, MAX_OUTPUT_CHARS - len(prefix))
+    if len(text) > available:
+        marker = "\n[output truncated]"
+        text = text[: max(0, available - len(marker))] + marker
+    return (prefix + text)[:MAX_OUTPUT_CHARS]
+
+
+def run_python(code: str) -> str:
+    if not isinstance(code, str):
+        return "Error: code must be a string."
+
+    output = bytearray()
+    note = ""
+    try:
+        with tempfile.TemporaryDirectory(prefix="loupe-python-") as directory:
+            with subprocess.Popen(
+                [sys.executable, "-I", "-u", "-c", code],
+                cwd=directory,
+                env={"LANG": "C.UTF-8", "HOME": directory, "TMPDIR": directory},
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                preexec_fn=_apply_limits,
+            ) as process:
+                deadline = time.monotonic() + WALL_TIMEOUT_SECONDS
+                try:
+                    assert process.stdout is not None
+                    with selectors.DefaultSelector() as selector:
+                        selector.register(process.stdout, selectors.EVENT_READ)
+                        while selector.get_map():
+                            remaining = deadline - time.monotonic()
+                            if remaining <= 0:
+                                raise subprocess.TimeoutExpired(process.args, WALL_TIMEOUT_SECONDS)
+                            if not selector.select(remaining):
+                                continue
+                            chunk = os.read(process.stdout.fileno(), 65536)
+                            if not chunk:
+                                selector.unregister(process.stdout)
+                                break
+                            # Drain the pipe after the cap without growing parent memory.
+                            # Four bytes per character cover UTF-8, plus an overflow sentinel.
+                            budget = MAX_OUTPUT_CHARS * 4 + 1 - len(output)
+                            output.extend(chunk[:budget])
+                    process.wait(timeout=max(0, deadline - time.monotonic()))
+                except subprocess.TimeoutExpired:
+                    note = f"Python timed out after {WALL_TIMEOUT_SECONDS} seconds."
+                finally:
+                    # Also remove descendants when the direct child exits normally.
+                    _kill_process_group(process)
+                    process.wait()
+
+                if not note and process.returncode < 0:
+                    killed_by = signal.Signals(-process.returncode).name
+                    note = (
+                        f"Python was killed by {killed_by} "
+                        "(a resource limit may have been reached)."
+                    )
+                elif not note and process.returncode:
+                    note = f"Python exited with code {process.returncode}."
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        note = f"Could not run Python with required resource limits: {error}"
+
+    return _format_output(output, note)
