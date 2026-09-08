@@ -1,6 +1,6 @@
 export type Step = {
   id: string;
-  kind: "thinking" | "tool_call" | "tool_result" | "answer";
+  kind: "thinking" | "tool_call" | "tool_result" | "answer" | "memory";
   tool_name: string | null;
   detail: string;
 };

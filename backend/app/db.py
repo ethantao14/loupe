@@ -6,12 +6,37 @@ from app.config import SUPABASE_SERVICE_KEY, SUPABASE_URL
 
 MESSAGES_TABLE = "messages"
 STEPS_TABLE = "steps"
+MEMORIES_TABLE = "memories"
 PAGE_SIZE = 1000
 MESSAGE_ID_BATCH_SIZE = 200
 
 
 def get_client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+
+def insert_memory(client: Client, fact: str) -> dict:
+    response = client.rpc("insert_memory", {"fact": fact}).execute()
+    return cast(dict, response.data)
+
+
+def fetch_memories(client: Client, limit: int) -> list[dict]:
+    """Read the most recent facts, newest first, up to the requested limit."""
+    memories: list[dict] = []
+    while len(memories) < limit:
+        page_size = min(PAGE_SIZE, limit - len(memories))
+        response = (
+            client.table(MEMORIES_TABLE)
+            .select("*")
+            .order("seq", desc=True)
+            .range(len(memories), len(memories) + page_size - 1)
+            .execute()
+        )
+        page = cast(list[dict], response.data)
+        memories.extend(page)
+        if len(page) < page_size:
+            break
+    return memories
 
 
 def fetch_messages(client: Client) -> list[dict]:
@@ -57,12 +82,9 @@ def fetch_steps(client: Client, message_ids: list[str]) -> list[dict]:
 def insert_exchange_with_steps(
     client: Client, user_content: str, reply_content: str, steps: list[dict]
 ) -> tuple[dict, dict, list[dict]]:
-    response = (
-        client.rpc(
-            "insert_exchange_with_steps",
-            {"user_content": user_content, "reply_content": reply_content, "steps": steps},
-        )
-        .execute()
-    )
+    response = client.rpc(
+        "insert_exchange_with_steps",
+        {"user_content": user_content, "reply_content": reply_content, "steps": steps},
+    ).execute()
     exchange = cast(dict, response.data)
     return exchange["user"], exchange["reply"], exchange["steps"]
