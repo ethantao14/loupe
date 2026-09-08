@@ -1,8 +1,16 @@
+export type Step = {
+  id: string;
+  kind: "thinking" | "tool_call" | "tool_result" | "answer";
+  tool_name: string | null;
+  detail: string;
+};
+
 export type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  steps: Step[];
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
