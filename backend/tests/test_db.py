@@ -27,9 +27,7 @@ def test_fetch_paginates_in_order(table: str, row_count: int) -> None:
         query.in_.assert_not_called()
     else:
         result = db.fetch_steps(client, ["assistant-id"])
-        assert query.in_.call_args_list == [
-            call("message_id", ["assistant-id"]) for _ in offsets
-        ]
+        assert query.in_.call_args_list == [call("message_id", ["assistant-id"]) for _ in offsets]
 
     assert result == rows
     assert client.table.call_args_list == [call(table) for _ in offsets]
@@ -100,8 +98,7 @@ def test_insert_exchange_with_steps_uses_one_rpc(steps: list[dict]) -> None:
     user = {"id": "user-id", "role": "user", "content": "Hi"}
     reply = {"id": "assistant-id", "role": "assistant", "content": "Hello!"}
     stored_steps = [
-        {"id": str(index), "message_id": reply["id"], **step}
-        for index, step in enumerate(steps)
+        {"id": str(index), "message_id": reply["id"], **step} for index, step in enumerate(steps)
     ]
     client.rpc.return_value.execute.return_value = SimpleNamespace(
         data={"user": user, "reply": reply, "steps": stored_steps}
@@ -127,3 +124,57 @@ def test_insert_exchange_with_steps_propagates_rpc_failure() -> None:
 
     client.rpc.return_value.execute.assert_called_once_with()
     client.table.assert_not_called()
+
+
+def test_insert_memory_uses_rpc():
+    client = Mock(spec=Client)
+    row = {"id": "memory-id", "seq": 1, "fact": "The user prefers Python."}
+    client.rpc.return_value.execute.return_value = SimpleNamespace(data=row)
+
+    assert db.insert_memory(client, row["fact"]) == row
+    client.rpc.assert_called_once_with("insert_memory", {"fact": row["fact"]})
+    client.rpc.return_value.execute.assert_called_once_with()
+    client.table.assert_not_called()
+
+
+def test_insert_memory_propagates_failure():
+    client = Mock(spec=Client)
+    client.rpc.return_value.execute.side_effect = RuntimeError("Insert failed")
+
+    with pytest.raises(RuntimeError, match="Insert failed"):
+        db.insert_memory(client, "A fact")
+
+
+@pytest.mark.parametrize(
+    "row_count, limit, ranges",
+    [
+        (0, 50, [(0, 49)]),
+        (12, 50, [(0, 49)]),
+        (100, 50, [(0, 49)]),
+        (2003, 2000, [(0, 999), (1000, 1999)]),
+        (2003, 2001, [(0, 999), (1000, 1999), (2000, 2000)]),
+        (2003, 5000, [(0, 999), (1000, 1999), (2000, 2999)]),
+        (1000, 5000, [(0, 999), (1000, 1999)]),
+        (100, 0, []),
+    ],
+)
+def test_fetch_memories_paginates_newest_first(row_count, limit, ranges):
+    rows = [{"seq": index, "fact": f"Fact {index}"} for index in range(row_count, 0, -1)]
+    client = Mock(spec=Client)
+    query = client.table.return_value
+    query.select.return_value = query
+    query.order.return_value = query
+    query.range.return_value = query
+
+    def execute():
+        start, end = query.range.call_args.args
+        return SimpleNamespace(data=rows[start : end + 1])
+
+    query.execute.side_effect = execute
+
+    assert db.fetch_memories(client, limit) == rows[:limit]
+    assert client.table.call_args_list == [call("memories")] * len(ranges)
+    assert query.select.call_args_list == [call("*")] * len(ranges)
+    assert query.order.call_args_list == [call("seq", desc=True)] * len(ranges)
+    assert query.range.call_args_list == [call(start, end) for start, end in ranges]
+    assert query.execute.call_count == len(ranges)

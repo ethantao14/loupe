@@ -9,7 +9,15 @@ const stepStyles = {
   tool_call: { label: "Tool call", badge: "bg-sky-400/10 text-sky-300" },
   tool_result: { label: "Tool result", badge: "bg-amber-400/10 text-amber-300" },
   answer: { label: "Answer", badge: "bg-emerald-400/10 text-emerald-300" },
+  memory: { label: "Memory", badge: "bg-rose-400/10 text-rose-300" },
 };
+
+function styleForStep(kind: string) {
+  if (Object.prototype.hasOwnProperty.call(stepStyles, kind)) {
+    return stepStyles[kind as keyof typeof stepStyles];
+  }
+  return { label: "Step", badge: "bg-neutral-400/10 text-neutral-300" };
+}
 
 function StepTrace({ steps }: { steps: Step[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -36,26 +44,29 @@ function StepTrace({ steps }: { steps: Step[] }) {
         aria-label="Reasoning steps"
         className="max-h-[32rem] space-y-4 overflow-y-auto border-t border-neutral-800 p-4"
       >
-        {steps.map((step, index) => (
-          <li key={step.id} className="min-w-0">
-            <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-              <span className="tabular-nums text-neutral-500">{index + 1}.</span>
-              <span className={`rounded px-2 py-1 font-medium ${stepStyles[step.kind].badge}`}>
-                {stepStyles[step.kind].label}
-              </span>
-              {step.tool_name ? (
-                <span className="break-all font-mono text-neutral-300">{step.tool_name}</span>
-              ) : null}
-            </div>
-            <pre
-              tabIndex={0}
-              aria-label={`Step ${index + 1}: ${stepStyles[step.kind].label} detail`}
-              className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-neutral-950 p-3 font-mono text-xs leading-relaxed text-neutral-300 focus-visible:outline-2 focus-visible:outline-sky-400"
-            >
-              {step.detail}
-            </pre>
-          </li>
-        ))}
+        {steps.map((step, index) => {
+          const style = styleForStep(step.kind);
+          return (
+            <li key={step.id} className="min-w-0">
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                <span className="tabular-nums text-neutral-500">{index + 1}.</span>
+                <span className={`rounded px-2 py-1 font-medium ${style.badge}`}>
+                  {style.label}
+                </span>
+                {step.tool_name ? (
+                  <span className="break-all font-mono text-neutral-300">{step.tool_name}</span>
+                ) : null}
+              </div>
+              <pre
+                tabIndex={0}
+                aria-label={`Step ${index + 1}: ${style.label} detail`}
+                className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-neutral-950 p-3 font-mono text-xs leading-relaxed text-neutral-300 focus-visible:outline-2 focus-visible:outline-sky-400"
+              >
+                {step.detail}
+              </pre>
+            </li>
+          );
+        })}
       </ol>
     </div>
   );

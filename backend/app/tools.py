@@ -9,6 +9,7 @@ import httpx
 from anthropic.types import ToolParam
 
 from app import config
+from app.memory import MemoryStore
 from app.sandbox import run_python
 
 MAX_CONTENT_CHARS = 4000
@@ -45,20 +46,35 @@ RUN_PYTHON_TOOL: ToolParam = {
     ),
     "input_schema": {
         "type": "object",
-        "properties": {
-            "code": {"type": "string", "description": "Python source code to execute."}
-        },
+        "properties": {"code": {"type": "string", "description": "Python source code to execute."}},
         "required": ["code"],
         "additionalProperties": False,
     },
     "strict": True,
 }
 
+REMEMBER_TOOL: ToolParam = {
+    "name": "remember",
+    "description": (
+        "Remember a durable fact about the user or the task for future conversations. "
+        "Use this when learning lasting preferences, context, or requirements, "
+        "not for transient chatter."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {"fact": {"type": "string", "description": "The durable fact to remember."}},
+        "required": ["fact"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+
 def available_tools() -> list[ToolParam]:
     """Code execution is offered only when it has been deliberately enabled."""
     if config.ENABLE_CODE_EXECUTION:
-        return [FETCH_URL_TOOL, RUN_PYTHON_TOOL]
-    return [FETCH_URL_TOOL]
+        return [FETCH_URL_TOOL, RUN_PYTHON_TOOL, REMEMBER_TOOL]
+    return [FETCH_URL_TOOL, REMEMBER_TOOL]
 
 
 class ToolError(Exception):
@@ -237,10 +253,21 @@ def fetch_url(url: str) -> str:
     raise ToolError(f"Too many redirects starting from {url}")
 
 
-def run_tool(name: str, tool_input: dict) -> str:
+def run_tool(name: str, tool_input: dict, memory_store: MemoryStore) -> str:
     # Failures come back as text so the model can react to them and retry,
     # rather than breaking the whole turn.
     try:
+        if name == "remember":
+            fact = tool_input.get("fact")
+            if not isinstance(fact, str):
+                raise ToolError("fact must be a string.")
+            if not fact.strip():
+                raise ToolError("fact must not be empty.")
+            try:
+                memory_store.remember(fact)
+            except Exception as error:
+                raise ToolError("Could not save memory. Please try again.") from error
+            return "Remembered: " + fact
         if name == "fetch_url":
             return fetch_url(tool_input["url"])
         if name == "run_python":

@@ -44,6 +44,35 @@ describe("Chat", () => {
     expect(await screen.findByText("Hello there")).toBeInTheDocument();
   });
 
+  it("renders recalled memories with their label", async () => {
+    fetchMessages.mockResolvedValue([message("1", "assistant", "Hello", [{
+      id: "memory-1", kind: "memory", tool_name: null, detail: "The user prefers Python.",
+    }])]);
+
+    render(<Chat />);
+    await userEvent.click(await screen.findByRole("button", { name: "Show reasoning (1 step)" }));
+
+    expect(screen.getByText("Memory")).toBeVisible();
+    expect(screen.getByLabelText("Step 1: Memory detail")).toHaveTextContent(
+      "The user prefers Python.",
+    );
+  });
+
+  it.each(["future_kind", "toString", "__proto__"])(
+    "renders an unknown step kind safely: %s", async (kind) => {
+      const unknownStep = {
+        id: "unknown-1", kind, tool_name: null, detail: "Future step detail",
+      } as unknown as Step;
+      fetchMessages.mockResolvedValue([message("1", "assistant", "Hello", [unknownStep])]);
+
+      render(<Chat />);
+      await userEvent.click(await screen.findByRole("button", { name: "Show reasoning (1 step)" }));
+
+      expect(screen.getByText("Step")).toBeVisible();
+      expect(screen.getByLabelText("Step 1: Step detail")).toHaveTextContent("Future step detail");
+    },
+  );
+
   it("sends a message and shows both turns", async () => {
     fetchMessages.mockResolvedValue([]);
     sendMessage.mockResolvedValue({

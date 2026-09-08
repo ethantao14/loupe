@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app import agent, claude_client, db
+from app.memory import MemoryStore
 
 app = FastAPI(title="Loupe API")
 
@@ -68,11 +69,11 @@ def send_message(
     db_client=Depends(get_db_client),
     llm_client=Depends(get_claude_client),
 ) -> dict:
-    # Nothing is persisted until the reply succeeds, so a failed call
-    # leaves no orphaned user turn behind for the retry to duplicate.
+    # Messages and steps are persisted together after the reply succeeds.
+    # Facts saved by remember persist independently of the exchange.
     history = db.fetch_messages(db_client)
     pending = [*history, {"role": "user", "content": body.content}]
-    result = agent.run_turn(llm_client, pending)
+    result = agent.run_turn(llm_client, pending, MemoryStore(db_client))
 
     user_message, reply, steps = db.insert_exchange_with_steps(
         db_client,

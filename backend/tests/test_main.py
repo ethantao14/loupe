@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -5,7 +7,7 @@ from app import agent, db
 from app.main import app, get_claude_client, get_db_client
 
 
-def raise_api_error(client, history):
+def raise_api_error(client, history, memory_store):
     raise RuntimeError("Claude API unavailable")
 
 
@@ -13,6 +15,7 @@ class FakeDb:
     def __init__(self) -> None:
         self.rows: list[dict] = []
         self.steps: list[dict] = []
+        self.memories: list[dict] = []
 
     def fetch_messages(self) -> list[dict]:
         return list(self.rows)
@@ -66,6 +69,10 @@ class FakeClaudeClient:
 
 
 def make_client(fake_db: FakeDb, monkeypatch) -> TestClient:
+    monkeypatch.setattr(db, "fetch_memories", lambda client, limit: client.memories[::-1][:limit])
+    monkeypatch.setattr(
+        db, "insert_memory", lambda client, fact: client.memories.append({"fact": fact})
+    )
     monkeypatch.setattr(db, "fetch_messages", lambda client: client.fetch_messages())
     monkeypatch.setattr(
         db, "fetch_steps", lambda client, message_ids: client.fetch_steps(message_ids)
@@ -78,6 +85,54 @@ def make_client(fake_db: FakeDb, monkeypatch) -> TestClient:
     app.dependency_overrides[get_db_client] = lambda: fake_db
     app.dependency_overrides[get_claude_client] = lambda: FakeClaudeClient()
     return TestClient(app)
+
+
+def test_remembers_fact_and_recalls_it_in_later_conversation(monkeypatch):
+    fake_db = FakeDb()
+    client = make_client(fake_db, monkeypatch)
+    requests = []
+    responses = [
+        SimpleNamespace(
+            stop_reason="tool_use",
+            content=[
+                SimpleNamespace(
+                    type="tool_use",
+                    name="remember",
+                    id="remember_1",
+                    input={"fact": "The user prefers Python."},
+                )
+            ],
+        ),
+        FakeClaudeResponse("I'll remember that."),
+        FakeClaudeResponse("You prefer Python."),
+    ]
+
+    def create(**kwargs):
+        requests.append(kwargs)
+        return responses.pop(0)
+
+    llm_client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    app.dependency_overrides[get_claude_client] = lambda: llm_client
+
+    first = client.post("/api/messages", json={"content": "I prefer Python."})
+
+    assert first.status_code == 200
+    assert fake_db.memories == [{"fact": "The user prefers Python."}]
+    assert requests[0]["system"] == agent.SYSTEM_PROMPT
+    assert all(step["kind"] != "memory" for step in first.json()["reply"]["steps"])
+
+    # A fresh conversation has no message history, but uses the same saved facts.
+    fake_db.rows.clear()
+    fake_db.steps.clear()
+    second = client.post("/api/messages", json={"content": "What language do I prefer?"})
+
+    assert second.status_code == 200
+    assert "The user prefers Python." in requests[2]["system"]
+    assert len(requests[2]["messages"]) == 1
+    recalled = second.json()["reply"]["steps"][0]
+    assert recalled["kind"] == "memory"
+    assert recalled["detail"] == "- The user prefers Python."
+    assert client.get("/api/messages").json()[1]["steps"][0] == recalled
 
 
 def test_list_messages_empty(monkeypatch) -> None:
@@ -138,7 +193,9 @@ def test_send_message_returns_tool_steps_in_order(monkeypatch) -> None:
         agent.Step(kind="answer", detail="Here is the summary."),
     ]
     monkeypatch.setattr(
-        agent, "run_turn", lambda client, history: agent.TurnResult("Here is the summary.", steps)
+        agent,
+        "run_turn",
+        lambda client, history, memory_store: agent.TurnResult("Here is the summary.", steps),
     )
 
     response = client.post("/api/messages", json={"content": "Read example.com"})
