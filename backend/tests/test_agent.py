@@ -43,7 +43,10 @@ def tool_response(url):
 def test_answers_without_tools():
     client = ScriptedClient([text_response("No tool needed.")])
 
-    assert agent.run_turn(client, [{"role": "user", "content": "Hi"}]) == "No tool needed."
+    result = agent.run_turn(client, [{"role": "user", "content": "Hi"}])
+
+    assert result.reply == "No tool needed."
+    assert result.steps == [agent.Step(kind="answer", detail="No tool needed.")]
     assert len(client.requests) == 1
 
 
@@ -53,9 +56,18 @@ def test_runs_tool_then_answers(monkeypatch):
         [tool_response("https://example.com"), text_response("The page says hello.")]
     )
 
-    reply = agent.run_turn(client, [{"role": "user", "content": "Read example.com"}])
+    result = agent.run_turn(client, [{"role": "user", "content": "Read example.com"}])
 
-    assert reply == "The page says hello."
+    assert result.reply == "The page says hello."
+    assert result.steps == [
+        agent.Step(
+            kind="tool_call",
+            tool_name="fetch_url",
+            detail="{'url': 'https://example.com'}",
+        ),
+        agent.Step(kind="tool_result", tool_name="fetch_url", detail="Page said hello"),
+        agent.Step(kind="answer", detail="The page says hello."),
+    ]
     # Second request carries the assistant tool_use turn and the tool result.
     sent = client.requests[1]["messages"]
     assert sent[-1]["content"][0]["type"] == "tool_result"
@@ -77,7 +89,8 @@ def test_stops_after_iteration_limit(monkeypatch):
         [tool_response("https://example.com") for _ in range(agent.MAX_ITERATIONS)]
     )
 
-    reply = agent.run_turn(client, [{"role": "user", "content": "Loop forever"}])
+    result = agent.run_turn(client, [{"role": "user", "content": "Loop forever"}])
 
-    assert reply == agent.OUT_OF_STEPS_REPLY
+    assert result.reply == agent.OUT_OF_STEPS_REPLY
+    assert result.steps[-1] == agent.Step(kind="answer", detail=agent.OUT_OF_STEPS_REPLY)
     assert len(client.requests) == agent.MAX_ITERATIONS

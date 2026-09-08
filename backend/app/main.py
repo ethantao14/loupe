@@ -72,7 +72,15 @@ def send_message(
     # leaves no orphaned user turn behind for the retry to duplicate.
     history = db.fetch_messages(db_client)
     pending = [*history, {"role": "user", "content": body.content}]
-    reply_text = agent.run_turn(llm_client, pending)
+    result = agent.run_turn(llm_client, pending)
 
-    user_message, reply = db.insert_exchange(db_client, body.content, reply_text)
-    return {"user": user_message, "reply": reply}
+    user_message, reply, steps = db.insert_exchange_with_steps(
+        db_client,
+        body.content,
+        result.reply,
+        [
+            {"kind": step.kind, "tool_name": step.tool_name, "detail": step.detail}
+            for step in result.steps
+        ],
+    )
+    return {"user": user_message, "reply": _with_steps([reply], steps)[0]}
