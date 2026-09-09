@@ -145,7 +145,9 @@ def run_python(code: str) -> str:
                         note = f"Python exited with code {process.returncode}."
             finally:
                 if prefix:
-                    confine.remove_container(directory)
+                    failure = confine.remove_container(directory)
+                    if failure:
+                        note = f"{note} ({failure})" if note else failure
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         note = f"Could not run Python with required resource limits: {error}"
 

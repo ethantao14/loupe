@@ -35,7 +35,9 @@ def test_run_python_with_real_resource_limits() -> None:
 
 
 def test_missing_confinement_preserves_existing_execution(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(confine, "_availability", lambda: (None, "Docker unavailable"))
+    monkeypatch.setattr(
+        confine, "_availability", lambda: confine.Probe(None, "Docker unavailable", False)
+    )
 
     assert sandbox.run_python("print(2 + 2)") == "4\n"
 

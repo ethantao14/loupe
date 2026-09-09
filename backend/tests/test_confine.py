@@ -170,20 +170,49 @@ def test_docker_prefix_and_successful_probe_are_cached(
     ]
 
 
-def test_remove_container_is_bounded(
+def test_remove_container_succeeds_quietly(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(confine, "_availability", lambda: ("/usr/bin/docker", None))
-    remove = Mock()
+    monkeypatch.setattr(
+        confine, "_availability", lambda: confine.Probe("/usr/bin/docker", None, False)
+    )
+    remove = Mock(return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=""))
     monkeypatch.setattr(confine.subprocess, "run", remove)
 
-    confine.remove_container(str(tmp_path))
+    assert confine.remove_container(str(tmp_path)) is None
+    assert remove.call_count == 1
+    assert remove.call_args.args[0] == ["/usr/bin/docker", "rm", "--force", tmp_path.name]
 
-    remove.assert_called_once_with(
-        ["/usr/bin/docker", "rm", "--force", tmp_path.name],
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        timeout=confine.DOCKER_TIMEOUT_SECONDS, check=False,
+
+def test_already_removed_container_is_not_a_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        confine, "_availability", lambda: confine.Probe("/usr/bin/docker", None, False)
     )
+    gone = subprocess.CompletedProcess([], 1, stdout="", stderr="Error: No such container: x")
+    monkeypatch.setattr(confine.subprocess, "run", Mock(return_value=gone))
+
+    assert confine.remove_container(str(tmp_path)) is None
+
+
+def test_failed_removal_is_retried_then_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """A container that outlives its client keeps consuming resources, so a
+    failure to remove it must be reported rather than swallowed."""
+    monkeypatch.setattr(
+        confine, "_availability", lambda: confine.Probe("/usr/bin/docker", None, False)
+    )
+    refused = subprocess.CompletedProcess([], 1, stdout="", stderr="daemon refused")
+    remove = Mock(return_value=refused)
+    monkeypatch.setattr(confine.subprocess, "run", remove)
+
+    failure = confine.remove_container(str(tmp_path))
+
+    assert failure is not None
+    assert "daemon refused" in failure
+    assert remove.call_count == confine.REMOVE_ATTEMPTS
 
 
 def test_every_proxy_variant_is_blanked() -> None:

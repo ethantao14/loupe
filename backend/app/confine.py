@@ -9,6 +9,7 @@ import shutil
 import subprocess
 from functools import cache
 from pathlib import Path
+from typing import NamedTuple
 
 DOCKER_TMPFS_SIZE = "64m"  # Bounds what executed code can write.
 DOCKER_IMAGE = "python:3.13-slim"
@@ -16,14 +17,23 @@ DOCKER_MEMORY = "512m"
 DOCKER_CPUS = "1"
 DOCKER_PIDS_LIMIT = 64
 DOCKER_TIMEOUT_SECONDS = 2
-DOCKER_PULL_TIMEOUT_SECONDS = 300  # A first pull is slow, and happens once.
+DOCKER_PULL_TIMEOUT_SECONDS = 300
+REMOVE_ATTEMPTS = 3  # A first pull is slow, and happens once.
+
+
+class Probe(NamedTuple):
+    """Whether confinement is usable, and whether failing back is acceptable."""
+
+    launcher: str | None
+    reason: str | None
+    fatal: bool
 
 
 @cache
-def _availability() -> tuple[str | None, str | None]:
+def _availability() -> Probe:
     launcher = shutil.which("docker")
     if launcher is None:
-        return None, "Docker binary not found on PATH"
+        return Probe(None, "Docker binary not found on PATH", False)
     try:
         result = subprocess.run(
             [launcher, "info", "--format", "{{.ServerVersion}}"],
@@ -34,28 +44,17 @@ def _availability() -> tuple[str | None, str | None]:
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
-        return None, f"Docker daemon unavailable: {error}"
+        return Probe(None, f"Docker daemon unavailable: {error}", False)
     if result.returncode:
         detail = result.stderr.strip() or f"exit code {result.returncode}"
-        return None, f"Docker daemon unavailable: {detail}"
+        return Probe(None, f"Docker daemon unavailable: {detail}", False)
 
     missing = _ensure_image(launcher)
     if missing:
         # Docker is here but unusable. Falling back would quietly drop isolation,
-        # so this is reported as fatal rather than as an absent runtime.
-        return None, missing
-    return launcher, None
-
-
-@cache
-def fatal_error() -> str | None:
-    """A reason the tool must refuse rather than run with weaker confinement."""
-    if shutil.which("docker") is None:
-        return None
-    reason = _availability()[1]
-    if reason is None or "daemon unavailable" in reason:
-        return None
-    return reason
+        # so this is fatal, decided by where it failed rather than by its wording.
+        return Probe(None, missing, True)
+    return Probe(launcher, None, False)
 
 
 def _ensure_image(launcher: str) -> str | None:
@@ -86,14 +85,20 @@ def _ensure_image(launcher: str) -> str | None:
     return None
 
 
+def fatal_error() -> str | None:
+    """A reason the tool must refuse rather than run with weaker confinement."""
+    probe = _availability()
+    return probe.reason if probe.fatal else None
+
+
 def unavailable_reason() -> str | None:
     """Return the cached binary/daemon check, including a bounded probe timeout."""
-    return _availability()[1]
+    return _availability().reason
 
 
 def command_prefix(directory: str) -> list[str]:
     """Return Docker and container Python arguments, or [] for the host fallback."""
-    launcher, _ = _availability()
+    launcher = _availability().launcher
     if launcher is None:
         return []
     return [
@@ -151,19 +156,37 @@ def _blank_proxy_arguments() -> list[str]:
     return arguments
 
 
-def remove_container(directory: str) -> None:
-    """Remove any container left running after its client exits or is killed."""
-    launcher, _ = _availability()
+def remove_container(directory: str) -> str | None:
+    """Remove a container the client left behind, reporting a failure to remove it.
+
+    Killing the client does not stop the container, so a timed out run keeps
+    consuming resources until this succeeds.
+    """
+    launcher = _availability().launcher
     if launcher is None:
-        return
-    subprocess.run(
-        [launcher, "rm", "--force", Path(directory).name],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=DOCKER_TIMEOUT_SECONDS,
-        check=False,
-    )
+        return None
+
+    name = Path(directory).name
+    last_detail = ""
+    for _ in range(REMOVE_ATTEMPTS):
+        try:
+            result = subprocess.run(
+                [launcher, "rm", "--force", name],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=DOCKER_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            last_detail = str(error)
+            continue
+        stderr = result.stderr.strip()
+        # A container that is already gone is the outcome we wanted.
+        if result.returncode == 0 or "No such container" in stderr:
+            return None
+        last_detail = stderr or f"exit code {result.returncode}"
+    return f"could not remove container {name}: {last_detail}"
 
 
 def describe() -> str:
