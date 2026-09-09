@@ -133,13 +133,30 @@ def test_docker_prefix_and_successful_probe_are_cached(
     monkeypatch.setattr(confine.subprocess, "run", probe)
     directory = tmp_path / "work with spaces"
 
-    assert confine.command_prefix(str(directory)) == [
-        "/usr/bin/docker", "run", "--rm", "--init", "--name", directory.name,
-        "--network", "none", "--memory", "512m", "--cpus", "1",
-        "--pids-limit", "64", "--read-only", "--tmpfs", "/tmp:size=64m",
-        "--tmpfs", "/work:size=64m,exec", "-w", "/work",
-        "python:3.13-slim", "sh", "-c", 'exec python -I -u -c "$0" 2>&1',
-    ]
+    prefix = confine.command_prefix(str(directory))
+
+    # Asserted as properties rather than an exact argument list, which broke on
+    # every correct change to the flags without ever catching a real defect.
+    assert prefix[:4] == ["/usr/bin/docker", "run", "--rm", "--init"]
+    assert prefix[-3:] == ["sh", "-c", 'exec python -I -u -c "$0" 2>&1']
+    assert confine.DOCKER_IMAGE in prefix
+    for flag, value in [
+        ("--network", "none"),
+        ("--log-driver", "none"),
+        ("--memory", confine.DOCKER_MEMORY),
+        ("--cpus", confine.DOCKER_CPUS),
+        ("--pids-limit", str(confine.DOCKER_PIDS_LIMIT)),
+        ("--name", directory.name),
+        ("-w", "/work"),
+    ]:
+        assert prefix[prefix.index(flag) + 1] == value
+    assert "--read-only" in prefix
+    assert f"/work:size={confine.DOCKER_TMPFS_SIZE},exec" in prefix
+    assert f"/tmp:size={confine.DOCKER_TMPFS_SIZE}" in prefix
+    # No host path is mounted into the container.
+    assert "-v" not in prefix
+    for name in confine.PROXY_VARIABLES:
+        assert f"{name}=" in prefix
     assert confine.unavailable_reason() is None
     assert "no network" in confine.describe()
     which.assert_called_once_with("docker")

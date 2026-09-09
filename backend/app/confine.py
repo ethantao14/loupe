@@ -41,8 +41,21 @@ def _availability() -> tuple[str | None, str | None]:
 
     missing = _ensure_image(launcher)
     if missing:
+        # Docker is here but unusable. Falling back would quietly drop isolation,
+        # so this is reported as fatal rather than as an absent runtime.
         return None, missing
     return launcher, None
+
+
+@cache
+def fatal_error() -> str | None:
+    """A reason the tool must refuse rather than run with weaker confinement."""
+    if shutil.which("docker") is None:
+        return None
+    reason = _availability()[1]
+    if reason is None or "daemon unavailable" in reason:
+        return None
+    return reason
 
 
 def _ensure_image(launcher: str) -> str | None:
@@ -94,6 +107,13 @@ def command_prefix(directory: str) -> list[str]:
         Path(directory).name,
         "--network",
         "none",
+        # Container output is captured through the client, so host side logging
+        # would only be an unbounded second copy.
+        "--log-driver",
+        "none",
+        # Docker injects proxy settings from client config, which can carry
+        # credentials. Blank them so executed code cannot read them.
+        *_blank_proxy_arguments(),
         "--memory",
         DOCKER_MEMORY,
         "--cpus",
@@ -116,6 +136,19 @@ def command_prefix(directory: str) -> list[str]:
         "-c",
         'exec python -I -u -c "$0" 2>&1',
     ]
+
+
+PROXY_VARIABLES = (
+    "HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "ftp_proxy", "no_proxy",
+)
+
+
+def _blank_proxy_arguments() -> list[str]:
+    arguments: list[str] = []
+    for name in PROXY_VARIABLES:
+        arguments.extend(["--env", f"{name}="])
+    return arguments
 
 
 def remove_container(directory: str) -> None:

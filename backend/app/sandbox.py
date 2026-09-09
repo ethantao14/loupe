@@ -73,6 +73,10 @@ def run_python(code: str) -> str:
     if not isinstance(code, str):
         return "Error: code must be a string."
 
+    blocking = confine.fatal_error()
+    if blocking:
+        return f"Error: {blocking}"
+
     output = bytearray()
     note = ""
     try:
