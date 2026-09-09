@@ -184,3 +184,10 @@ def test_remove_container_is_bounded(
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         timeout=confine.DOCKER_TIMEOUT_SECONDS, check=False,
     )
+
+
+def test_every_proxy_variant_is_blanked() -> None:
+    """Docker injects these from client config, and they can carry credentials."""
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "NO_PROXY", "ALL_PROXY"):
+        assert name in confine.PROXY_VARIABLES
+        assert name.lower() in confine.PROXY_VARIABLES

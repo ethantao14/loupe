@@ -139,8 +139,8 @@ def command_prefix(directory: str) -> list[str]:
 
 
 PROXY_VARIABLES = (
-    "HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "NO_PROXY",
-    "http_proxy", "https_proxy", "ftp_proxy", "no_proxy",
+    "HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "NO_PROXY", "ALL_PROXY",
+    "http_proxy", "https_proxy", "ftp_proxy", "no_proxy", "all_proxy",
 )
 
 
