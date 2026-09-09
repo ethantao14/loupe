@@ -28,6 +28,20 @@ WALL_TIMEOUT_SECONDS = 5
 MAX_OUTPUT_CHARS = 4000
 
 
+# Container exit codes carry Linux signal numbers, which differ from this
+# host's, so they are named from a Linux table rather than signal.Signals.
+LINUX_SIGNALS = {
+    1: "SIGHUP", 2: "SIGINT", 3: "SIGQUIT", 4: "SIGILL", 6: "SIGABRT",
+    8: "SIGFPE", 9: "SIGKILL", 10: "SIGUSR1", 11: "SIGSEGV", 12: "SIGUSR2",
+    13: "SIGPIPE", 14: "SIGALRM", 15: "SIGTERM", 24: "SIGXCPU", 25: "SIGXFSZ",
+}
+LINUX_SIGNAL_LIMIT = 65
+
+
+def _linux_signal_name(number: int) -> str:
+    return LINUX_SIGNALS.get(number, f"signal {number}")
+
+
 def _apply_limits() -> None:
     resource.setrlimit(resource.RLIMIT_CPU, (CPU_LIMIT_SECONDS, CPU_LIMIT_SECONDS + 1))
     try:
@@ -111,8 +125,12 @@ def run_python(code: str) -> str:
 
                     returncode = process.returncode
                     # Docker reports container signals as shell-style exit statuses.
-                    if prefix and 128 < returncode < 128 + signal.NSIG:
-                        returncode = -(returncode - 128)
+                    if prefix and 128 < returncode < 128 + LINUX_SIGNAL_LIMIT:
+                        note = (
+                            f"Python was killed by {_linux_signal_name(returncode - 128)} "
+                            "(a resource limit may have been reached)."
+                        )
+                        returncode = 0
                     if not note and returncode < 0:
                         killed_by = signal.Signals(-returncode).name
                         note = (

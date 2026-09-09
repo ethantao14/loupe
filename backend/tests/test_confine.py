@@ -137,17 +137,20 @@ def test_docker_prefix_and_successful_probe_are_cached(
         "/usr/bin/docker", "run", "--rm", "--init", "--name", directory.name,
         "--network", "none", "--memory", "512m", "--cpus", "1",
         "--pids-limit", "64", "--read-only", "--tmpfs", "/tmp:size=64m",
-        "-v", f"{directory.resolve()}:/work", "-w", "/work",
+        "--tmpfs", "/work:size=64m,exec", "-w", "/work",
         "python:3.13-slim", "sh", "-c", 'exec python -I -u -c "$0" 2>&1',
     ]
     assert confine.unavailable_reason() is None
     assert "no network" in confine.describe()
     which.assert_called_once_with("docker")
-    probe.assert_called_once_with(
-        ["/usr/bin/docker", "info", "--format", "{{.ServerVersion}}"],
-        stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        timeout=confine.DOCKER_TIMEOUT_SECONDS, check=False,
-    )
+    # The daemon probe and the image check both run once, then stay cached.
+    assert probe.call_count == 2
+    assert probe.call_args_list[0].args[0] == [
+        "/usr/bin/docker", "info", "--format", "{{.ServerVersion}}"
+    ]
+    assert probe.call_args_list[1].args[0] == [
+        "/usr/bin/docker", "image", "inspect", confine.DOCKER_IMAGE
+    ]
 
 
 def test_remove_container_is_bounded(

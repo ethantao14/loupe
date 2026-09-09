@@ -10,11 +10,13 @@ import subprocess
 from functools import cache
 from pathlib import Path
 
+DOCKER_TMPFS_SIZE = "64m"  # Bounds what executed code can write.
 DOCKER_IMAGE = "python:3.13-slim"
 DOCKER_MEMORY = "512m"
 DOCKER_CPUS = "1"
 DOCKER_PIDS_LIMIT = 64
 DOCKER_TIMEOUT_SECONDS = 2
+DOCKER_PULL_TIMEOUT_SECONDS = 300  # A first pull is slow, and happens once.
 
 
 @cache
@@ -36,7 +38,39 @@ def _availability() -> tuple[str | None, str | None]:
     if result.returncode:
         detail = result.stderr.strip() or f"exit code {result.returncode}"
         return None, f"Docker daemon unavailable: {detail}"
+
+    missing = _ensure_image(launcher)
+    if missing:
+        return None, missing
     return launcher, None
+
+
+def _ensure_image(launcher: str) -> str | None:
+    """Pull the image once up front, so a cold start cannot eat the run deadline."""
+    try:
+        present = subprocess.run(
+            [launcher, "image", "inspect", DOCKER_IMAGE],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=DOCKER_TIMEOUT_SECONDS,
+            check=False,
+        )
+        if present.returncode == 0:
+            return None
+        pulled = subprocess.run(
+            [launcher, "pull", "--quiet", DOCKER_IMAGE],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=DOCKER_PULL_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return f"Could not prepare {DOCKER_IMAGE}: {error}"
+    if pulled.returncode:
+        detail = pulled.stderr.strip() or f"exit code {pulled.returncode}"
+        return f"Could not prepare {DOCKER_IMAGE}: {detail}"
+    return None
 
 
 def unavailable_reason() -> str | None:
@@ -68,9 +102,11 @@ def command_prefix(directory: str) -> list[str]:
         str(DOCKER_PIDS_LIMIT),
         "--read-only",
         "--tmpfs",
-        "/tmp:size=64m",
-        "-v",
-        f"{Path(directory).resolve()}:/work",
+        f"/tmp:size={DOCKER_TMPFS_SIZE}",
+        # A tmpfs rather than a host mount, so writes are bounded, nothing from
+        # the host is reachable, and no files are left behind to clean up.
+        "--tmpfs",
+        f"/work:size={DOCKER_TMPFS_SIZE},exec",
         "-w",
         "/work",
         DOCKER_IMAGE,
@@ -102,7 +138,7 @@ def describe() -> str:
     if reason is not None:
         return f"Docker unavailable: {reason}; using weaker POSIX resource limits"
     return (
-        f"Docker ({DOCKER_IMAGE}): host filesystem limited to working directory, "
-        f"no network, read-only root; memory {DOCKER_MEMORY}, CPUs {DOCKER_CPUS}, "
+        f"Docker ({DOCKER_IMAGE}): no host filesystem, no network, read-only root; "
+        f"writes bounded to {DOCKER_TMPFS_SIZE}; memory {DOCKER_MEMORY}, CPUs {DOCKER_CPUS}, "
         f"processes {DOCKER_PIDS_LIMIT}"
     )
