@@ -131,7 +131,10 @@ def test_remembers_fact_and_recalls_it_in_later_conversation(monkeypatch):
     assert len(requests[2]["messages"]) == 1
     recalled = second.json()["reply"]["steps"][0]
     assert recalled["kind"] == "memory"
-    assert recalled["detail"] == "- The user prefers Python."
+    assert recalled["detail"] == (
+        "Selected 1 of 1 candidates\nRecency fallback: no matching terms\n"
+        "- 0.000 | The user prefers Python."
+    )
     assert client.get("/api/messages").json()[1]["steps"][0] == recalled
 
 

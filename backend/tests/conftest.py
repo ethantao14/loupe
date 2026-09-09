@@ -10,8 +10,9 @@ os.environ.setdefault("SUPABASE_SERVICE_KEY", "test-key")
 
 @pytest.fixture
 def memory_store() -> Mock:
-    from app.memory import MemoryStore
+    from app.memory import MemoryStore, RecallResult
 
     store = Mock(spec=MemoryStore)
     store.recall.return_value = []
+    store.recall_relevant.return_value = RecallResult([], 0)
     return store
