@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from app import config, sandbox, tools
+from app import config, confine, sandbox, tools
 
 
 @pytest.fixture(autouse=True)
@@ -17,10 +17,57 @@ def enable_code_execution(monkeypatch):
     monkeypatch.setattr(config, "ENABLE_CODE_EXECUTION", True)
 
 
+@pytest.fixture(autouse=True)
+def execution_backend(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+    backend = getattr(request, "param", "host")
+    if backend == "docker":
+        reason = confine.unavailable_reason()
+        if reason is not None:
+            pytest.skip(reason)
+    else:
+        # Also bypass the fatal probe, so these stay tests of the host path
+        # rather than tests of whether an image happens to be pullable.
+        monkeypatch.setattr(confine, "command_prefix", lambda directory: [])
+        monkeypatch.setattr(confine, "fatal_error", lambda: None)
+    return backend
+
+
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_run_python_with_real_resource_limits() -> None:
     assert sandbox.run_python("print(2 + 2)") == "4\n"
 
 
+def test_missing_confinement_preserves_existing_execution(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        confine, "_availability", lambda: confine.Probe(None, "Docker unavailable", False)
+    )
+
+    assert sandbox.run_python("print(2 + 2)") == "4\n"
+
+
+def test_failed_confinement_never_retries_unconfined(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(confine, "command_prefix", lambda directory: ["/no-such-launcher"])
+    monkeypatch.setattr(confine, "remove_container", lambda directory: None)
+
+    result = sandbox.run_python("print('must not execute')")
+
+    assert result.startswith("Error:")
+    assert "must not execute" not in result
+
+
+def test_docker_signal_status_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(confine, "remove_container", lambda directory: None)
+    monkeypatch.setattr(
+        confine, "command_prefix",
+        lambda directory: [sys.executable, "-I", "-c", f"raise SystemExit({128 + signal.SIGXCPU})"],
+    )
+
+    result = sandbox.run_python("pass")
+
+    assert result.startswith("Error: Python was killed by SIGXCPU")
+
+
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_prints_and_combines_stdout_and_stderr():
     result = sandbox.run_python("import sys; print('hello'); print('problem', file=sys.stderr)")
 
@@ -28,6 +75,7 @@ def test_prints_and_combines_stdout_and_stderr():
 
 
 @pytest.mark.parametrize("code", ["raise RuntimeError('boom')", "raise SystemExit(7)"])
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_nonzero_exit_is_text(code):
     result = sandbox.run_python(code)
 
@@ -36,8 +84,10 @@ def test_nonzero_exit_is_text(code):
         assert "RuntimeError: boom" in result
 
 
-def test_infinite_loop_times_out(monkeypatch):
-    monkeypatch.setattr(sandbox, "WALL_TIMEOUT_SECONDS", 0.3)
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
+def test_infinite_loop_times_out(monkeypatch, execution_backend):
+    timeout = 2 if execution_backend == "docker" else 0.3
+    monkeypatch.setattr(sandbox, "WALL_TIMEOUT_SECONDS", timeout)
     started = time.monotonic()
 
     result = sandbox.run_python("print('before loop')\nwhile True: pass")
@@ -45,9 +95,10 @@ def test_infinite_loop_times_out(monkeypatch):
     assert result.startswith("Error:")
     assert "timed out" in result
     assert "before loop" in result
-    assert time.monotonic() - started < 3
+    assert time.monotonic() - started < timeout + confine.DOCKER_TIMEOUT_SECONDS + 1
 
 
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_output_is_capped():
     result = sandbox.run_python(f"print('x' * {sandbox.MAX_OUTPUT_CHARS * 1000})")
 
@@ -55,6 +106,7 @@ def test_output_is_capped():
     assert result.endswith("[output truncated]")
 
 
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_error_note_survives_output_truncation():
     result = sandbox.run_python(
         f"print('x' * {sandbox.MAX_OUTPUT_CHARS * 10}); raise SystemExit(9)"
@@ -66,6 +118,7 @@ def test_error_note_survives_output_truncation():
 
 
 @pytest.mark.parametrize("name", ["ANTHROPIC_API_KEY", "SUPABASE_SERVICE_KEY", "DATABASE_URL"])
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_credentials_are_not_inherited(monkeypatch, name):
     monkeypatch.setenv(name, "secret-must-not-leak")
 
@@ -75,21 +128,28 @@ def test_credentials_are_not_inherited(monkeypatch, name):
     assert "secret-must-not-leak" not in result
 
 
-def test_working_directory_is_temporary_and_removed():
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
+def test_working_directory_is_temporary_and_removed(monkeypatch, execution_backend):
+    directories = []
+    prefix = confine.command_prefix
+
+    def record_directory(directory):
+        directories.append(Path(directory))
+        return prefix(directory)
+
+    monkeypatch.setattr(confine, "command_prefix", record_directory)
     code = "import os; print(os.getcwd()); open('created.txt', 'w').write('temporary')"
-    first = Path(sandbox.run_python(code).strip())
-    second = Path(sandbox.run_python(code).strip())
-    repo = Path(__file__).resolve().parents[2]
-
-    assert first.name.startswith("loupe-python-")
-    assert first != repo
-    assert repo not in first.parents
-    assert first != second
-    assert not first.exists()
-    assert not second.exists()
+    first = sandbox.run_python(code).strip()
+    second = sandbox.run_python(code).strip()
+    assert first == ("/work" if execution_backend == "docker" else str(directories[0].resolve()))
+    assert second == ("/work" if execution_backend == "docker" else str(directories[1].resolve()))
+    assert directories[0] != directories[1]
+    assert all(path.name.startswith("loupe-python-") for path in directories)
+    assert all(not path.exists() for path in directories)
 
 
-def test_uses_current_interpreter_and_isolated_mode(monkeypatch, tmp_path):
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
+def test_uses_current_interpreter_and_isolated_mode(monkeypatch, tmp_path, execution_backend):
     (tmp_path / "injected_module.py").write_text("raise RuntimeError('injected')")
     monkeypatch.setenv("PYTHONPATH", str(tmp_path))
 
@@ -99,9 +159,11 @@ def test_uses_current_interpreter_and_isolated_mode(monkeypatch, tmp_path):
         "print(importlib.util.find_spec('injected_module'))"
     )
 
-    assert result.splitlines() == [sys.executable, "1", "1", "None"]
+    executable = "/usr/local/bin/python" if execution_backend == "docker" else sys.executable
+    assert result.splitlines() == [executable, "1", "1", "None"]
 
 
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_stdin_is_closed():
     assert sandbox.run_python("import sys; print(repr(sys.stdin.read()))") == "''\n"
 
@@ -119,6 +181,7 @@ def test_file_size_is_limited():
     assert result == f"OSError\n{sandbox.FILE_SIZE_LIMIT_BYTES}\n"
 
 
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_limit_signal_is_reported():
     result = sandbox.run_python("import os, signal; os.kill(os.getpid(), signal.SIGXCPU)")
 
@@ -266,6 +329,7 @@ def test_fails_closed_when_mandatory_limits_cannot_be_applied(
     assert "must not execute" not in result
 
 
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_run_tool_dispatches(memory_store):
     assert tools.run_tool("run_python", {"code": "print(6 * 7)"}, memory_store) == "42\n"
     assert tools.RUN_PYTHON_TOOL in tools.available_tools()
@@ -290,3 +354,35 @@ def test_disabled_tool_refuses_to_run(monkeypatch, memory_store):
     assert tools.run_tool("run_python", {"code": "print(1)"}, memory_store) == (
         "Error: The run_python tool is disabled."
     )
+
+
+@pytest.mark.parametrize("times_out", [False, True])
+def test_container_client_has_no_posix_limits_and_is_cleaned_up(monkeypatch, times_out):
+    directories = []
+    cleaned_up = []
+    popen = subprocess.Popen
+
+    def prefix(directory):
+        directories.append(directory)
+        return [sys.executable, "-I", "-u", "-c"]
+
+    def launch(*args, **kwargs):
+        assert kwargs["preexec_fn"] is None
+        assert kwargs["env"] is None
+        assert kwargs["start_new_session"] is True
+        return popen(*args, **kwargs)
+
+    monkeypatch.setattr(confine, "command_prefix", prefix)
+    monkeypatch.setattr(confine, "remove_container", cleaned_up.append)
+    monkeypatch.setattr(sandbox.subprocess, "Popen", launch)
+    monkeypatch.setattr(sandbox, "WALL_TIMEOUT_SECONDS", 0.3)
+    code = "print('started')"
+    if times_out:
+        code += "; import time; time.sleep(30)"
+
+    result = sandbox.run_python(code)
+
+    assert "started" in result
+    assert ("timed out" in result) == times_out
+    assert cleaned_up == directories
+    assert len(cleaned_up) == 1
