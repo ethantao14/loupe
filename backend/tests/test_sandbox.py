@@ -25,7 +25,10 @@ def execution_backend(request: pytest.FixtureRequest, monkeypatch: pytest.Monkey
         if reason is not None:
             pytest.skip(reason)
     else:
+        # Also bypass the fatal probe, so these stay tests of the host path
+        # rather than tests of whether an image happens to be pullable.
         monkeypatch.setattr(confine, "command_prefix", lambda directory: [])
+        monkeypatch.setattr(confine, "fatal_error", lambda: None)
     return backend
 
 

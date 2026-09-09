@@ -190,9 +190,12 @@ def remove_container(directory: str) -> str | None:
 
 
 def describe() -> str:
-    reason = unavailable_reason()
-    if reason is not None:
-        return f"Docker unavailable: {reason}; using weaker POSIX resource limits"
+    probe = _availability()
+    if probe.fatal:
+        # Refusing, not falling back, so the trace must not imply code ran.
+        return f"Docker unusable: {probe.reason}; code execution refused"
+    if probe.reason is not None:
+        return f"Docker unavailable: {probe.reason}; using weaker POSIX resource limits"
     return (
         f"Docker ({DOCKER_IMAGE}): no host filesystem, no network, read-only root; "
         f"writes bounded to {DOCKER_TMPFS_SIZE}; memory {DOCKER_MEMORY}, CPUs {DOCKER_CPUS}, "
