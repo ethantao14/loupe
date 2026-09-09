@@ -19,7 +19,9 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: mypy app
-      - run: pytest
+      # -rs reports why anything skipped, so a silently skipped container
+      # test cannot be mistaken for a passing one.
+      - run: pytest -rs
 
   frontend:
     runs-on: ubuntu-latest
