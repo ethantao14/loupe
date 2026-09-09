@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import anthropic
 from anthropic.types import MessageParam, ToolResultBlockParam
 
-from app import tools
+from app import confine, tools
 from app.config import CLAUDE_MODEL
 from app.memory import RECALL_TOP_K, MemoryStore, RecallResult
 
@@ -96,11 +96,14 @@ def run_turn(
                     kind = "answer" if is_final else "thinking"
                     steps.append(Step(kind=kind, detail=_shorten(block.text)))
             elif block.type == "tool_use":
+                detail = str(block.input)
+                if block.name == "run_python" and tools.config.ENABLE_CODE_EXECUTION:
+                    detail = f"{confine.describe()}\n{detail}"
                 steps.append(
                     Step(
                         kind="tool_call",
                         tool_name=block.name,
-                        detail=_shorten(str(block.input)),
+                        detail=_shorten(detail),
                     )
                 )
                 output = tools.run_tool(block.name, block.input, memory_store)

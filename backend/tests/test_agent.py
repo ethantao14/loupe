@@ -261,3 +261,29 @@ def test_remember_tool_receives_store_and_reports_success(memory_store):
     assert client.requests[1]["messages"][-1]["content"][0]["content"] == (
         "Remembered: The user prefers Python."
     )
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_python_trace_describes_confinement_only_when_enabled(monkeypatch, memory_store, enabled):
+    monkeypatch.setattr(tools.config, "ENABLE_CODE_EXECUTION", enabled)
+    description = Mock(
+        return_value="Docker unavailable: daemon stopped; using POSIX resource limits"
+    )
+    monkeypatch.setattr(agent.confine, "describe", description)
+    monkeypatch.setattr(tools, "run_tool", lambda *args: "4\n")
+    client = ScriptedClient([
+        Response("tool_use", [Block(
+            "tool_use", name="run_python", block_id="tu_python", tool_input={"code": "print(4)"},
+        )]),
+        text_response("4"),
+    ])
+
+    result = agent.run_turn(client, [{"role": "user", "content": "Run Python"}], memory_store)
+
+    detail = result.steps[0].detail
+    assert "print(4)" in detail
+    if enabled:
+        assert detail.startswith(description.return_value)
+        description.assert_called_once_with()
+    else:
+        description.assert_not_called()
