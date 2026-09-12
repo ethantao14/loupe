@@ -1,8 +1,10 @@
 import os
+from uuid import UUID
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from supabase import Client
 
 from app import agent, claude_client, db
 from app.memory import MemoryStore
@@ -12,7 +14,7 @@ app = FastAPI(title="Loupe API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.environ.get("FRONTEND_ORIGIN", "http://localhost:3000")],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -41,6 +43,12 @@ class SendMessageOut(BaseModel):
     reply: MessageOut
 
 
+class MemoryOut(BaseModel):
+    id: str
+    fact: str
+    created_at: str
+
+
 def _with_steps(messages: list[dict], steps: list[dict]) -> list[dict]:
     by_message: dict[str, list[dict]] = {}
     for step in steps:
@@ -54,6 +62,18 @@ def get_db_client():
 
 def get_claude_client():
     return claude_client.get_client()
+
+
+@app.get("/api/memories", response_model=list[MemoryOut])
+def list_memories(client: Client = Depends(get_db_client)) -> list[dict]:
+    return db.fetch_memories(client)
+
+
+@app.delete("/api/memories/{memory_id}", status_code=204)
+def forget_memory(memory_id: UUID, client: Client = Depends(get_db_client)) -> Response:
+    if not db.delete_memory(client, str(memory_id)):
+        raise HTTPException(status_code=404, detail="Remembered fact not found.")
+    return Response(status_code=204)
 
 
 @app.get("/api/messages", response_model=list[MessageOut])

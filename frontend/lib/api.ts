@@ -13,6 +13,12 @@ export type Message = {
   steps: Step[];
 };
 
+export type Memory = {
+  id: string;
+  fact: string;
+  created_at: string;
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function parseOrThrow(response: Response): Promise<unknown> {
@@ -25,6 +31,20 @@ async function parseOrThrow(response: Response): Promise<unknown> {
 export async function fetchMessages(): Promise<Message[]> {
   const response = await fetch(`${API_BASE}/api/messages`);
   return (await parseOrThrow(response)) as Message[];
+}
+
+export async function fetchMemories(): Promise<Memory[]> {
+  const response = await fetch(`${API_BASE}/api/memories`);
+  return (await parseOrThrow(response)) as Memory[];
+}
+
+export async function deleteMemory(memoryId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/memories/${encodeURIComponent(memoryId)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
+  }
 }
 
 export type SendResult = {

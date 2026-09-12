@@ -2,7 +2,15 @@
 
 import { useEffect, useId, useState } from "react";
 
-import { fetchMessages, sendMessage, type Message, type Step } from "@/lib/api";
+import {
+  deleteMemory,
+  fetchMemories,
+  fetchMessages,
+  sendMessage,
+  type Memory,
+  type Message,
+  type Step,
+} from "@/lib/api";
 
 const stepStyles = {
   thinking: { label: "Thinking", badge: "bg-violet-400/10 text-violet-300" },
@@ -72,6 +80,103 @@ function StepTrace({ steps }: { steps: Step[] }) {
   );
 }
 
+function MemoryPanel() {
+  const [expanded, setExpanded] = useState(false);
+  const [memories, setMemories] = useState<Memory[] | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const panelId = useId();
+
+  async function loadMemories() {
+    setIsLoading(true);
+    setError(null);
+    try {
+      setMemories(await fetchMemories());
+    } catch {
+      setError("Could not load remembered facts. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function togglePanel() {
+    setExpanded(!expanded);
+    if (!expanded && memories === null && !isLoading) {
+      void loadMemories();
+    }
+  }
+
+  async function forgetMemory(memory: Memory) {
+    setDeletingId(memory.id);
+    setError(null);
+    try {
+      await deleteMemory(memory.id);
+      setMemories((current) => current?.filter((fact) => fact.id !== memory.id) ?? null);
+    } catch {
+      setError(`Could not forget "${memory.fact}". Please try again.`);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  return (
+    <div className="max-w-2xl overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/50">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={panelId}
+        onClick={togglePanel}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-neutral-300 transition-colors hover:bg-neutral-800/60 hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-400"
+      >
+        <span aria-hidden="true" className="text-neutral-500">
+          {expanded ? "▾" : "▸"}
+        </span>
+        Remembered facts ({memories === null ? "not loaded" : memories.length})
+      </button>
+      <div id={panelId} hidden={!expanded} className="space-y-3 border-t border-neutral-800 p-4">
+        {isLoading ? (
+          <p role="status" className="text-sm text-neutral-400">Loading remembered facts...</p>
+        ) : null}
+        {error ? <p role="alert" className="break-words text-sm text-red-400">{error}</p> : null}
+        {memories === null && error ? (
+          <button
+            type="button"
+            onClick={() => void loadMemories()}
+            disabled={isLoading}
+            className="rounded px-2 py-1 text-sm text-sky-300 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50"
+          >
+            Retry loading remembered facts
+          </button>
+        ) : null}
+        {memories?.length === 0 ? (
+          <p className="text-sm text-neutral-400">No remembered facts.</p>
+        ) : null}
+        {memories && memories.length > 0 ? (
+          <ul aria-label="Remembered facts" className="max-h-64 space-y-3 overflow-y-auto">
+            {memories.map((memory) => (
+              <li key={memory.id} className="flex items-start justify-between gap-4">
+                <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-neutral-300">
+                  {memory.fact}
+                </p>
+                <button
+                  type="button"
+                  aria-label={`Forget fact: ${memory.fact}`}
+                  disabled={deletingId !== null}
+                  onClick={() => void forgetMemory(memory)}
+                  className="shrink-0 rounded px-2 py-1 text-xs text-rose-300 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50"
+                >
+                  {deletingId === memory.id ? "Forgetting..." : "Forget"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
@@ -122,6 +227,7 @@ export default function Chat() {
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-6 py-6">
+        <MemoryPanel />
         {messages.length === 0 && !error ? (
           <p className="text-neutral-500">Start the conversation below.</p>
         ) : null}

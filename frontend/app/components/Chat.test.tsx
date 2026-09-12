@@ -2,18 +2,27 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Message, Step } from "@/lib/api";
+import type { Memory, Message, Step } from "@/lib/api";
 
 import Chat from "./Chat";
 
 vi.mock("@/lib/api", () => ({
   fetchMessages: vi.fn(),
   sendMessage: vi.fn(),
+  fetchMemories: vi.fn(),
+  deleteMemory: vi.fn(),
 }));
 
 const api = await import("@/lib/api");
 const fetchMessages = vi.mocked(api.fetchMessages);
 const sendMessage = vi.mocked(api.sendMessage);
+const fetchMemories = vi.mocked(api.fetchMemories);
+const deleteMemory = vi.mocked(api.deleteMemory);
+
+const rememberedFacts: Memory[] = [
+  { id: "memory-2", fact: "The user prefers Python.", created_at: "2026-01-02T00:00:00Z" },
+  { id: "memory-1", fact: "The user lives in Boston.", created_at: "2026-01-01T00:00:00Z" },
+];
 
 function message(
   id: string,
@@ -34,6 +43,128 @@ const traceSteps: Step[] = [
 describe("Chat", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    fetchMemories.mockResolvedValue(rememberedFacts);
+    deleteMemory.mockResolvedValue(undefined);
+  });
+
+  it("keeps memories collapsed without fetching until opened and retains the loaded count", async () => {
+    fetchMessages.mockResolvedValue([]);
+    const { rerender } = render(<Chat />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+
+    const control = screen.getByRole("button", { name: "Remembered facts (not loaded)" });
+    expect(control).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById(control.getAttribute("aria-controls") ?? "")).not.toBeVisible();
+    expect(fetchMemories).not.toHaveBeenCalled();
+
+    await userEvent.click(control);
+
+    expect(await screen.findByText(rememberedFacts[0].fact)).toBeVisible();
+    expect(screen.getByText(rememberedFacts[1].fact)).toBeVisible();
+    expect(control).toHaveAttribute("aria-expanded", "true");
+    expect(control).toHaveAccessibleName("Remembered facts (2)");
+    expect(document.getElementById(control.getAttribute("aria-controls") ?? "")).toContainElement(
+      screen.getByRole("list", { name: "Remembered facts" }),
+    );
+    const items = screen.getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    rememberedFacts.forEach((memory, index) => expect(items[index]).toHaveTextContent(memory.fact));
+
+    await userEvent.click(control);
+    expect(control).toHaveAttribute("aria-expanded", "false");
+    expect(control).toHaveAccessibleName("Remembered facts (2)");
+    expect(screen.getByText(rememberedFacts[0].fact)).not.toBeVisible();
+    rerender(<Chat />);
+    await userEvent.click(control);
+    expect(fetchMemories).toHaveBeenCalledTimes(1);
+  });
+
+  it("forgets a fact and updates the count without reloading", async () => {
+    fetchMessages.mockResolvedValue([]);
+    render(<Chat />);
+    await userEvent.click(screen.getByRole("button", { name: "Remembered facts (not loaded)" }));
+    await userEvent.click(await screen.findByRole("button", {
+      name: `Forget fact: ${rememberedFacts[0].fact}`,
+    }));
+
+    await waitFor(() => expect(screen.queryByText(rememberedFacts[0].fact)).not.toBeInTheDocument());
+    expect(deleteMemory).toHaveBeenCalledExactlyOnceWith(rememberedFacts[0].id);
+    expect(screen.getByText(rememberedFacts[1].fact)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Remembered facts (1)" })).toBeVisible();
+    expect(fetchMemories).toHaveBeenCalledTimes(1);
+    expect(fetchMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the fact on a failed delete and allows retrying", async () => {
+    fetchMessages.mockResolvedValue([]);
+    deleteMemory.mockRejectedValueOnce(new Error("network"));
+    render(<Chat />);
+    await userEvent.click(screen.getByRole("button", { name: "Remembered facts (not loaded)" }));
+    const forget = await screen.findByRole("button", {
+      name: `Forget fact: ${rememberedFacts[0].fact}`,
+    });
+    await userEvent.click(forget);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      `Could not forget "${rememberedFacts[0].fact}". Please try again.`,
+    );
+    expect(screen.getByText(rememberedFacts[0].fact)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Remembered facts (2)" })).toBeVisible();
+    expect(forget).toBeEnabled();
+
+    await userEvent.click(forget);
+    await waitFor(() => expect(screen.queryByText(rememberedFacts[0].fact)).not.toBeInTheDocument());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows a loading error and can retry an empty memory list", async () => {
+    fetchMessages.mockResolvedValue([]);
+    fetchMemories.mockRejectedValueOnce(new Error("network")).mockResolvedValueOnce([]);
+    render(<Chat />);
+    await userEvent.click(screen.getByRole("button", { name: "Remembered facts (not loaded)" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load remembered facts.");
+    await userEvent.click(screen.getByRole("button", { name: "Retry loading remembered facts" }));
+
+    expect(await screen.findByText("No remembered facts.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Remembered facts (0)" })).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(fetchMemories).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not duplicate pending memory requests when toggling the panel", async () => {
+    fetchMessages.mockResolvedValue([]);
+    let finishLoading: (memories: Memory[]) => void = () => {};
+    fetchMemories.mockReturnValue(new Promise((resolve) => { finishLoading = resolve; }));
+    render(<Chat />);
+    const control = screen.getByRole("button", { name: "Remembered facts (not loaded)" });
+    await userEvent.click(control);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading remembered facts...");
+    await userEvent.click(control);
+    await userEvent.click(control);
+    expect(fetchMemories).toHaveBeenCalledTimes(1);
+
+    finishLoading(rememberedFacts);
+    expect(await screen.findByText(rememberedFacts[0].fact)).toBeVisible();
+  });
+
+  it("keeps a fact visible and prevents duplicate deletes until deletion succeeds", async () => {
+    fetchMessages.mockResolvedValue([]);
+    let finishDelete: () => void = () => {};
+    deleteMemory.mockReturnValue(new Promise((resolve) => { finishDelete = resolve; }));
+    render(<Chat />);
+    await userEvent.click(screen.getByRole("button", { name: "Remembered facts (not loaded)" }));
+    const forget = await screen.findByRole("button", {
+      name: `Forget fact: ${rememberedFacts[0].fact}`,
+    });
+    await userEvent.click(forget);
+    expect(forget).toBeDisabled();
+    expect(screen.getByText(rememberedFacts[0].fact)).toBeVisible();
+    await userEvent.click(forget);
+    expect(deleteMemory).toHaveBeenCalledTimes(1);
+
+    finishDelete();
+    await waitFor(() => expect(screen.queryByText(rememberedFacts[0].fact)).not.toBeInTheDocument());
   });
 
   it("renders history loaded on mount", async () => {
