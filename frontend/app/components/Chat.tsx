@@ -91,6 +91,7 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
   const loadInFlight = useRef(false);
   const refreshPending = useRef(false);
   const loadSequence = useRef(0);
+  const deletedIds = useRef(new Set<string>());
   const panelId = useId();
 
   const loadMemories = useCallback(async () => {
@@ -107,7 +108,9 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
       setLoadError(null);
       try {
         const facts = await fetchMemories();
-        if (sequence === loadSequence.current) setMemories(facts);
+        if (sequence === loadSequence.current) {
+          setMemories(facts.filter((fact) => !deletedIds.current.has(fact.id)));
+        }
       } catch {
         if (sequence === loadSequence.current) {
           setLoadError("Could not load remembered facts. Please try again.");
@@ -138,8 +141,9 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
     setDeleteError(null);
     try {
       await deleteMemory(memory.id);
-      // Reads started before this deletion must not restore the removed fact.
-      loadSequence.current += 1;
+      // A read already in flight may carry facts saved this turn, so it is
+      // filtered rather than discarded, which would lose them.
+      deletedIds.current.add(memory.id);
       setMemories((current) => current?.filter((fact) => fact.id !== memory.id) ?? null);
     } catch {
       setDeleteError(`Could not forget "${memory.fact}". Please try again.`);
@@ -242,12 +246,13 @@ export default function Chat() {
     try {
       const { user, reply } = await sendMessage(content);
       setMessages((current) => [...current, user, reply]);
-      setMemoryVersion((current) => current + 1);
     } catch {
       setError("Could not send that message.");
       setDraft(content);
     } finally {
       setIsSending(false);
+      // A turn that failed may still have stored a fact before failing.
+      setMemoryVersion((current) => current + 1);
     }
   }
 

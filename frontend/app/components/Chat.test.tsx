@@ -422,4 +422,59 @@ describe("Chat", () => {
 
     expect(await screen.findByText("The user's dog is a corgi")).toBeInTheDocument();
   });
+
+  it("keeps a newly saved fact when a delete invalidates the refresh carrying it", async () => {
+    // The delete discarded the whole in flight response, new facts included.
+    fetchMessages.mockResolvedValue([]);
+    sendMessage.mockResolvedValue({
+      user: message("1", "user", "remember something"),
+      reply: message("2", "assistant", "Noted."),
+    });
+    fetchMemories.mockResolvedValueOnce(rememberedFacts);
+    let releaseRefresh: (facts: Memory[]) => void = () => {};
+    fetchMemories.mockReturnValueOnce(
+      new Promise<Memory[]>((resolve) => {
+        releaseRefresh = resolve;
+      }),
+    );
+    fetchMemories.mockResolvedValue([
+      { id: "new", fact: "A newly saved fact", created_at: "2026-01-03T00:00:00Z" },
+    ]);
+    deleteMemory.mockResolvedValue(undefined);
+
+    render(<Chat />);
+    await userEvent.click(await screen.findByRole("button", { name: /Remembered facts/ }));
+    expect(await screen.findByText(rememberedFacts[0].fact)).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Message"), "remember something");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await userEvent.click(screen.getByRole("button", {
+      name: `Forget fact: ${rememberedFacts[0].fact}`,
+    }));
+    releaseRefresh([...rememberedFacts, {
+      id: "new", fact: "A newly saved fact", created_at: "2026-01-03T00:00:00Z",
+    }]);
+
+    expect(await screen.findByText("A newly saved fact")).toBeInTheDocument();
+  });
+
+  it("refreshes remembered facts even when the turn fails", async () => {
+    // remember can succeed before the turn fails, so the fact is already stored.
+    fetchMessages.mockResolvedValue([]);
+    fetchMemories.mockResolvedValueOnce(rememberedFacts);
+    sendMessage.mockRejectedValue(new Error("turn failed"));
+    fetchMemories.mockResolvedValue([
+      ...rememberedFacts,
+      { id: "saved", fact: "Stored before the failure", created_at: "2026-01-04T00:00:00Z" },
+    ]);
+
+    render(<Chat />);
+    await userEvent.click(await screen.findByRole("button", { name: /Remembered facts/ }));
+    expect(await screen.findByText(rememberedFacts[0].fact)).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Message"), "remember this");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Stored before the failure")).toBeInTheDocument();
+  });
 });
