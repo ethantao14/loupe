@@ -20,11 +20,16 @@ def insert_memory(client: Client, fact: str) -> dict:
     return cast(dict, response.data)
 
 
-def fetch_memories(client: Client, limit: int) -> list[dict]:
-    """Read the most recent facts, newest first, up to the requested limit."""
+def delete_memory(client: Client, memory_id: str) -> bool:
+    response = client.table(MEMORIES_TABLE).delete().eq("id", memory_id).execute()
+    return bool(response.data)
+
+
+def fetch_memories(client: Client, limit: int | None = None) -> list[dict]:
+    """Read facts newest first, optionally stopping at the requested limit."""
     memories: list[dict] = []
-    while len(memories) < limit:
-        page_size = min(PAGE_SIZE, limit - len(memories))
+    while limit is None or len(memories) < limit:
+        page_size = PAGE_SIZE if limit is None else min(PAGE_SIZE, limit - len(memories))
         response = (
             client.table(MEMORIES_TABLE)
             .select("*")

@@ -156,6 +156,9 @@ def test_insert_memory_propagates_failure():
         (2003, 5000, [(0, 999), (1000, 1999), (2000, 2999)]),
         (1000, 5000, [(0, 999), (1000, 1999)]),
         (100, 0, []),
+        (0, None, [(0, 999)]),
+        (1000, None, [(0, 999), (1000, 1999)]),
+        (2003, None, [(0, 999), (1000, 1999), (2000, 2999)]),
     ],
 )
 def test_fetch_memories_paginates_newest_first(row_count, limit, ranges):
