@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -295,6 +295,108 @@ describe("Chat", () => {
 
     expect(screen.getByText("Page said hello.")).toBeVisible();
     expect(fetchMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not restore a deleted fact when an older refresh finishes", async () => {
+    fetchMessages.mockResolvedValue([]);
+    let finishRefresh: (memories: Memory[]) => void = () => {};
+    fetchMemories.mockResolvedValueOnce(rememberedFacts).mockReturnValueOnce(
+      new Promise((resolve) => { finishRefresh = resolve; }),
+    );
+    let finishDelete: () => void = () => {};
+    deleteMemory.mockReturnValueOnce(new Promise((resolve) => { finishDelete = resolve; }));
+    sendMessage.mockResolvedValue({
+      user: message("1", "user", "Hello"),
+      reply: message("2", "assistant", "Hi back"),
+    });
+
+    render(<Chat />);
+    await userEvent.click(screen.getByRole("button", { name: "Remembered facts (not loaded)" }));
+    expect(await screen.findByText(rememberedFacts[0].fact)).toBeVisible();
+    await userEvent.type(screen.getByLabelText("Message"), "Hello");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(fetchMemories).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("status")).toHaveTextContent("Loading remembered facts...");
+
+    await userEvent.click(screen.getByRole("button", {
+      name: `Forget fact: ${rememberedFacts[0].fact}`,
+    }));
+    await act(async () => { finishDelete(); });
+    expect(screen.queryByText(rememberedFacts[0].fact)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remembered facts (1)" })).toBeVisible();
+
+    await act(async () => { finishRefresh(rememberedFacts); });
+
+    expect(screen.queryByText(rememberedFacts[0].fact)).not.toBeInTheDocument();
+    expect(screen.getByText(rememberedFacts[1].fact)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Remembered facts (1)" })).toBeVisible();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(fetchMemories).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes after a chat turn completes during the initial memory load", async () => {
+    fetchMessages.mockResolvedValue([]);
+    let finishLoading: (memories: Memory[]) => void = () => {};
+    const newFact: Memory = {
+      id: "new", fact: "The user's dog is a corgi", created_at: "2026-01-02T00:00:00Z",
+    };
+    fetchMemories.mockReturnValueOnce(
+      new Promise((resolve) => { finishLoading = resolve; }),
+    ).mockResolvedValueOnce([...rememberedFacts, newFact]);
+    sendMessage.mockResolvedValue({
+      user: message("1", "user", "Remember my dog is a corgi"),
+      reply: message("2", "assistant", "Noted."),
+    });
+
+    render(<Chat />);
+    await userEvent.click(screen.getByRole("button", { name: "Remembered facts (not loaded)" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Loading remembered facts...");
+    await userEvent.type(screen.getByLabelText("Message"), "Remember my dog is a corgi");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("Noted.")).toBeVisible();
+    expect(fetchMemories).toHaveBeenCalledTimes(1);
+
+    await act(async () => { finishLoading(rememberedFacts); });
+
+    expect(await screen.findByText(newFact.fact)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Remembered facts (3)" })).toBeVisible();
+    expect(fetchMemories).toHaveBeenCalledTimes(2);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("retries a failed refresh while remembered facts are already listed", async () => {
+    fetchMessages.mockResolvedValue([]);
+    const newFact: Memory = {
+      id: "new", fact: "The user's dog is a corgi", created_at: "2026-01-02T00:00:00Z",
+    };
+    fetchMemories.mockResolvedValueOnce(rememberedFacts)
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce([...rememberedFacts, newFact]);
+    sendMessage.mockResolvedValue({
+      user: message("1", "user", "Remember my dog is a corgi"),
+      reply: message("2", "assistant", "Noted."),
+    });
+
+    render(<Chat />);
+    await userEvent.click(screen.getByRole("button", { name: "Remembered facts (not loaded)" }));
+    expect(await screen.findByText(rememberedFacts[0].fact)).toBeVisible();
+    await userEvent.type(screen.getByLabelText("Message"), "Remember my dog is a corgi");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load remembered facts.");
+    expect(screen.getByText(rememberedFacts[0].fact)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Remembered facts (2)" })).toBeVisible();
+
+    const retry = screen.getByRole("button", { name: "Retry loading remembered facts" });
+    expect(retry).toBeEnabled();
+    await userEvent.click(retry);
+
+    expect(await screen.findByText(newFact.fact)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Remembered facts (3)" })).toBeVisible();
+    expect(fetchMemories).toHaveBeenCalledTimes(3);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry loading remembered facts" }))
+      .not.toBeInTheDocument();
   });
 
   it("refreshes an open panel after a turn stores a new fact", async () => {

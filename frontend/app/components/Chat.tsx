@@ -85,44 +85,64 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
   const [memories, setMemories] = useState<Memory[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const hasLoaded = useRef(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const hasOpened = useRef(false);
+  const loadInFlight = useRef(false);
+  const refreshPending = useRef(false);
+  const loadSequence = useRef(0);
   const panelId = useId();
 
   const loadMemories = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      setMemories(await fetchMemories());
-      hasLoaded.current = true;
-    } catch {
-      setError("Could not load remembered facts. Please try again.");
-    } finally {
-      setIsLoading(false);
+    if (loadInFlight.current) {
+      refreshPending.current = true;
+      return;
     }
+
+    loadInFlight.current = true;
+    setIsLoading(true);
+    do {
+      refreshPending.current = false;
+      const sequence = ++loadSequence.current;
+      setLoadError(null);
+      try {
+        const facts = await fetchMemories();
+        if (sequence === loadSequence.current) setMemories(facts);
+      } catch {
+        if (sequence === loadSequence.current) {
+          setLoadError("Could not load remembered facts. Please try again.");
+        }
+      }
+    } while (refreshPending.current);
+
+    // Loading tracks the whole queue, even when a delete invalidates a result.
+    loadInFlight.current = false;
+    setIsLoading(false);
   }, []);
 
-  // A turn can store a new fact, so a panel that has already loaded refetches.
-  // One that was never opened stays unloaded.
+  // Opening enables refreshes immediately, including during the first load.
   useEffect(() => {
-    if (hasLoaded.current) void loadMemories();
+    if (hasOpened.current) void loadMemories();
   }, [refreshToken, loadMemories]);
 
   function togglePanel() {
     setExpanded(!expanded);
-    if (!expanded && memories === null && !isLoading) {
+    if (!expanded) hasOpened.current = true;
+    if (!expanded && memories === null && !loadInFlight.current) {
       void loadMemories();
     }
   }
 
   async function forgetMemory(memory: Memory) {
     setDeletingId(memory.id);
-    setError(null);
+    setDeleteError(null);
     try {
       await deleteMemory(memory.id);
+      // Reads started before this deletion must not restore the removed fact.
+      loadSequence.current += 1;
       setMemories((current) => current?.filter((fact) => fact.id !== memory.id) ?? null);
     } catch {
-      setError(`Could not forget "${memory.fact}". Please try again.`);
+      setDeleteError(`Could not forget "${memory.fact}". Please try again.`);
     } finally {
       setDeletingId(null);
     }
@@ -146,8 +166,9 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
         {isLoading ? (
           <p role="status" className="text-sm text-neutral-400">Loading remembered facts...</p>
         ) : null}
-        {error ? <p role="alert" className="break-words text-sm text-red-400">{error}</p> : null}
-        {memories === null && error ? (
+        {loadError ? <p role="alert" className="break-words text-sm text-red-400">{loadError}</p> : null}
+        {deleteError ? <p role="alert" className="break-words text-sm text-red-400">{deleteError}</p> : null}
+        {loadError ? (
           <button
             type="button"
             onClick={() => void loadMemories()}
