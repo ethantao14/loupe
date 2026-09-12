@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import {
   deleteMemory,
@@ -80,25 +80,33 @@ function StepTrace({ steps }: { steps: Step[] }) {
   );
 }
 
-function MemoryPanel() {
+function MemoryPanel({ refreshToken }: { refreshToken: number }) {
   const [expanded, setExpanded] = useState(false);
   const [memories, setMemories] = useState<Memory[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const hasLoaded = useRef(false);
   const panelId = useId();
 
-  async function loadMemories() {
+  const loadMemories = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       setMemories(await fetchMemories());
+      hasLoaded.current = true;
     } catch {
       setError("Could not load remembered facts. Please try again.");
     } finally {
       setIsLoading(false);
     }
-  }
+  }, []);
+
+  // A turn can store a new fact, so a panel that has already loaded refetches.
+  // One that was never opened stays unloaded.
+  useEffect(() => {
+    if (hasLoaded.current) void loadMemories();
+  }, [refreshToken, loadMemories]);
 
   function togglePanel() {
     setExpanded(!expanded);
@@ -182,6 +190,7 @@ export default function Chat() {
   const [draft, setDraft] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [memoryVersion, setMemoryVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -212,6 +221,7 @@ export default function Chat() {
     try {
       const { user, reply } = await sendMessage(content);
       setMessages((current) => [...current, user, reply]);
+      setMemoryVersion((current) => current + 1);
     } catch {
       setError("Could not send that message.");
       setDraft(content);
@@ -227,7 +237,7 @@ export default function Chat() {
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-6 py-6">
-        <MemoryPanel />
+        <MemoryPanel refreshToken={memoryVersion} />
         {messages.length === 0 && !error ? (
           <p className="text-neutral-500">Start the conversation below.</p>
         ) : null}

@@ -296,4 +296,28 @@ describe("Chat", () => {
     expect(screen.getByText("Page said hello.")).toBeVisible();
     expect(fetchMessages).toHaveBeenCalledTimes(1);
   });
+
+  it("refreshes an open panel after a turn stores a new fact", async () => {
+    // The panel used to cache forever, so a fact remembered during a later
+    // turn never appeared and could not be forgotten without a reload.
+    fetchMessages.mockResolvedValue([]);
+    fetchMemories.mockResolvedValueOnce(rememberedFacts);
+    sendMessage.mockResolvedValue({
+      user: message("1", "user", "Remember my dog is a corgi"),
+      reply: message("2", "assistant", "Noted."),
+    });
+    fetchMemories.mockResolvedValueOnce([
+      ...rememberedFacts,
+      { id: "new", fact: "The user's dog is a corgi", created_at: "2026-01-02T00:00:00Z" },
+    ]);
+
+    render(<Chat />);
+    await userEvent.click(await screen.findByRole("button", { name: /Remembered facts/ }));
+    expect(await screen.findByText(rememberedFacts[0].fact)).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Message"), "Remember my dog is a corgi");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("The user's dog is a corgi")).toBeInTheDocument();
+  });
 });
