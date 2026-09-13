@@ -61,6 +61,23 @@ def fetch_conversations(client: Client) -> list[dict]:
             return conversations
 
 
+def rename_conversation(client: Client, conversation_id: str, title: str) -> dict | None:
+    """Returns the updated conversation, or None when there was no such row."""
+    response = (
+        client.table(CONVERSATIONS_TABLE)
+        .update({"title": title})
+        .eq("id", conversation_id)
+        .execute()
+    )
+    updated = cast(list[dict], response.data)
+    return updated[0] if updated else None
+
+
+def delete_conversation(client: Client, conversation_id: str) -> bool:
+    response = client.table(CONVERSATIONS_TABLE).delete().eq("id", conversation_id).execute()
+    return bool(response.data)
+
+
 def fetch_latest_conversation_id(client: Client) -> str | None:
     response = (
         client.table(CONVERSATIONS_TABLE)

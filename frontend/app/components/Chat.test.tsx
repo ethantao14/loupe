@@ -12,6 +12,8 @@ vi.mock("@/lib/api", () => ({
   sendMessage: vi.fn(),
   fetchMemories: vi.fn(),
   deleteMemory: vi.fn(),
+  renameConversation: vi.fn(),
+  deleteConversation: vi.fn(),
 }));
 
 const api = await import("@/lib/api");
@@ -20,6 +22,8 @@ const fetchMessages = vi.mocked(api.fetchMessages);
 const sendMessage = vi.mocked(api.sendMessage);
 const fetchMemories = vi.mocked(api.fetchMemories);
 const deleteMemory = vi.mocked(api.deleteMemory);
+const renameConversation = vi.mocked(api.renameConversation);
+const deleteConversation = vi.mocked(api.deleteConversation);
 
 const conversations: Conversation[] = [
   { id: "chat-2", title: "Latest chat", created_at: "2026-01-02T00:00:00Z" },
@@ -526,7 +530,7 @@ describe("conversations", () => {
 
     expect(await screen.findByText("History for chat-2")).toBeVisible();
     const buttons = screen.getByRole("navigation", { name: "Conversations" })
-      .querySelectorAll("button");
+      .querySelectorAll(":scope > div > button");
     expect(Array.from(buttons, (button) => button.textContent)).toEqual([
       "Latest chat", "Earlier chat",
     ]);
@@ -586,7 +590,7 @@ describe("conversations", () => {
 
     const saved = await screen.findByRole("button", { name: "A new topic" });
     expect(saved).toHaveAttribute("aria-current", "page");
-    expect(saved.parentElement?.firstElementChild).toBe(saved);
+    expect(saved.parentElement?.parentElement?.firstElementChild).toBe(saved.parentElement);
     expect(screen.getByText("New reply")).toBeVisible();
     expect(sendMessage).toHaveBeenNthCalledWith(1, "A new topic", undefined);
     await userEvent.type(screen.getByLabelText("Message"), "Continue");
@@ -684,4 +688,208 @@ describe("conversations", () => {
     expect(fetchMessages).not.toHaveBeenCalled();
   });
 
+});
+
+describe("conversation actions", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    fetchConversations.mockResolvedValue(conversations);
+    fetchMessages.mockImplementation(async (id) => [
+      message(`${id}-message`, "user", `History for ${id}`),
+    ]);
+    deleteConversation.mockResolvedValue(undefined);
+    renameConversation.mockImplementation(async (id, title) => ({
+      ...conversations.find((item) => item.id === id)!, title,
+    }));
+  });
+
+  async function startRename(title = "Latest chat") {
+    await userEvent.click(screen.getByRole("button", { name: `Rename conversation: ${title}` }));
+    return screen.getByRole("textbox", { name: `Title for conversation: ${title}` });
+  }
+
+  async function confirmDelete(title: string) {
+    await userEvent.click(screen.getByRole("button", { name: `Delete conversation: ${title}` }));
+    await userEvent.click(screen.getByRole("button", {
+      name: `Confirm permanently delete conversation and all its messages: ${title}`,
+    }));
+  }
+
+  it.each(["Enter", "Save"])("renames in place using %s", async (save) => {
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    const input = await startRename();
+    expect(input).toHaveValue("Latest chat");
+    expect(input).toHaveFocus();
+    await userEvent.clear(input);
+    await userEvent.type(input, "  Updated   title  ");
+    if (save === "Enter") {
+      await userEvent.keyboard("{Enter}");
+    } else {
+      await userEvent.click(screen.getByRole("button", { name: "Save title for conversation: Latest chat" }));
+    }
+
+    expect(await screen.findByRole("button", { name: "Updated title" }))
+      .toHaveAttribute("aria-current", "page");
+    expect(renameConversation).toHaveBeenCalledExactlyOnceWith("chat-2", "Updated title");
+    expect(screen.queryByRole("button", { name: "Latest chat" })).not.toBeInTheDocument();
+    expect(screen.getByText("History for chat-2")).toBeVisible();
+    expect(fetchMessages).toHaveBeenCalledTimes(1);
+    expect(fetchConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["Escape", "Cancel"])("cancels rename using %s", async (cancel) => {
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    const input = await startRename();
+    await userEvent.clear(input);
+    await userEvent.type(input, "Discarded title");
+    if (cancel === "Escape") {
+      await userEvent.keyboard("{Escape}");
+    } else {
+      await userEvent.click(screen.getByRole("button", { name: "Cancel rename conversation: Latest chat" }));
+    }
+
+    expect(screen.queryByRole("textbox", { name: /Title for conversation/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Latest chat" })).toBeVisible();
+    expect(renameConversation).not.toHaveBeenCalled();
+  });
+
+  it.each(["", "   ", "Latest chat", "  Latest   chat  "])("cancels an empty or unchanged title: %s", async (title) => {
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    const input = await startRename();
+    await userEvent.clear(input);
+    if (title) await userEvent.type(input, title);
+    await userEvent.keyboard("{Enter}");
+
+    expect(renameConversation).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox", { name: /Title for conversation/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Latest chat" })).toBeVisible();
+  });
+
+  it("keeps the old title after a failed rename and permits retry", async () => {
+    renameConversation.mockRejectedValueOnce(new Error("offline"));
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    const input = await startRename();
+    await userEvent.clear(input);
+    await userEvent.type(input, "New title{Enter}");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent('Could not rename "Latest chat".');
+    expect(screen.getByRole("button", { name: "Latest chat" })).toBeVisible();
+    const save = screen.getByRole("button", { name: "Save title for conversation: Latest chat" });
+    expect(save).toBeEnabled();
+    await userEvent.click(save);
+    expect(await screen.findByRole("button", { name: "New title" })).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("requires an explicit delete confirmation and allows cancel", async () => {
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    await userEvent.click(screen.getByRole("button", { name: "Delete conversation: Latest chat" }));
+
+    expect(deleteConversation).not.toHaveBeenCalled();
+    expect(screen.getByText('Permanently delete "Latest chat" and all its messages? This cannot be undone.'))
+      .toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel delete conversation: Latest chat" }));
+    expect(deleteConversation).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Delete conversation: Latest chat" })).toBeVisible();
+  });
+
+  it("deletes the active conversation and loads the newest remaining one", async () => {
+    fetchConversations.mockResolvedValue([...conversations, {
+      id: "chat-0", title: "Oldest chat", created_at: "2025-12-31T00:00:00Z",
+    }]);
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    await confirmDelete("Latest chat");
+
+    expect(await screen.findByText("History for chat-1")).toBeVisible();
+    expect(deleteConversation).toHaveBeenCalledExactlyOnceWith("chat-2");
+    expect(screen.queryByRole("button", { name: "Latest chat" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Earlier chat" })).toHaveAttribute("aria-current", "page");
+    expect(fetchMessages).toHaveBeenLastCalledWith("chat-1");
+  });
+
+  it("deletes a non-active conversation without changing history or the draft", async () => {
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    await userEvent.type(screen.getByLabelText("Message"), "Keep this draft");
+    await confirmDelete("Earlier chat");
+
+    expect(deleteConversation).toHaveBeenCalledExactlyOnceWith("chat-1");
+    expect(screen.queryByRole("button", { name: "Earlier chat" })).not.toBeInTheDocument();
+    expect(screen.getByText("History for chat-2")).toBeVisible();
+    expect(screen.getByLabelText("Message")).toHaveValue("Keep this draft");
+    expect(screen.getByRole("button", { name: "Latest chat" })).toHaveAttribute("aria-current", "page");
+    expect(fetchMessages).toHaveBeenCalledExactlyOnceWith("chat-2");
+  });
+
+  it("deletes the only conversation and starts an empty new chat", async () => {
+    fetchConversations.mockResolvedValue([conversations[0]]);
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    await userEvent.type(screen.getByLabelText("Message"), "Discard this draft");
+    await confirmDelete("Latest chat");
+
+    expect(await screen.findByText("Start the conversation below.")).toBeVisible();
+    expect(screen.queryByText("History for chat-2")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Message")).toHaveValue("");
+    expect(document.querySelector('[aria-current="page"]')).toBeNull();
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+    expect(fetchMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a failed delete without removing rows and permits retry", async () => {
+    deleteConversation.mockRejectedValueOnce(new Error("offline"));
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    await confirmDelete("Latest chat");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent('Could not delete "Latest chat".');
+    expect(screen.getByRole("button", { name: "Latest chat" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Earlier chat" })).toBeVisible();
+    expect(screen.getByText("History for chat-2")).toBeVisible();
+    const confirm = screen.getByRole("button", {
+      name: "Confirm permanently delete conversation and all its messages: Latest chat",
+    });
+    expect(confirm).toBeEnabled();
+    await userEvent.click(confirm);
+    expect(await screen.findByText("History for chat-1")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("ignores a slow history response after deleting that conversation", async () => {
+    let finishLoading: (history: Message[]) => void = () => {};
+    fetchMessages.mockReturnValueOnce(new Promise((resolve) => { finishLoading = resolve; }));
+    render(<Chat />);
+    await screen.findByRole("button", { name: "Latest chat" });
+    await confirmDelete("Latest chat");
+    await screen.findByText("History for chat-1");
+
+    await act(async () => { finishLoading([message("stale", "user", "Deleted history")]); });
+
+    expect(screen.queryByText("Deleted history")).not.toBeInTheDocument();
+    expect(screen.getByText("History for chat-1")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Earlier chat" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("disables sidebar controls and sending during a delete", async () => {
+    let finishDelete: () => void = () => {};
+    deleteConversation.mockReturnValueOnce(new Promise((resolve) => { finishDelete = resolve; }));
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    await confirmDelete("Latest chat");
+
+    for (const button of screen.getByRole("navigation", { name: "Conversations" }).querySelectorAll("button")) {
+      expect(button).toBeDisabled();
+    }
+    expect(screen.getByRole("button", { name: "New chat" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    await act(async () => { finishDelete(); });
+    expect(await screen.findByText("History for chat-1")).toBeVisible();
+    expect(screen.getByRole("button", { name: "New chat" })).toBeEnabled();
+  });
 });

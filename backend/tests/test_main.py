@@ -29,6 +29,23 @@ class FakeDb:
     def conversation_exists(self, conversation_id: str) -> bool:
         return any(row["id"] == conversation_id for row in self.conversations)
 
+    def fetch_conversation(self, conversation_id: str) -> dict | None:
+        return next((row for row in self.conversations if row["id"] == conversation_id), None)
+
+    def rename_conversation(self, conversation_id: str, title: str) -> dict | None:
+        conversation = self.fetch_conversation(conversation_id)
+        if conversation is None:
+            return None
+        conversation["title"] = title
+        return conversation
+
+    def delete_conversation(self, conversation_id: str) -> bool:
+        conversation = self.fetch_conversation(conversation_id)
+        if conversation is None:
+            return False
+        self.conversations.remove(conversation)
+        return True
+
     def fetch_messages(self, conversation_id: str) -> list[dict]:
         return [row for row in self.rows if row["conversation_id"] == conversation_id]
 
@@ -103,6 +120,12 @@ def make_client(fake_db: FakeDb, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         db, "insert_memory", lambda client, fact: client.memories.append({"fact": fact})
     )
     monkeypatch.setattr(db, "fetch_conversations", lambda client: client.fetch_conversations())
+    monkeypatch.setattr(
+        db, "rename_conversation", lambda client, cid, title: client.rename_conversation(cid, title)
+    )
+    monkeypatch.setattr(
+        db, "delete_conversation", lambda client, cid: client.delete_conversation(cid)
+    )
     monkeypatch.setattr(
         db, "fetch_latest_conversation_id", lambda client: client.fetch_latest_conversation_id()
     )
@@ -377,3 +400,86 @@ def test_send_message_uses_only_selected_history(
     assert fake_db.fetch_messages(saved_id)[-2]["content"] == "Follow up"
     assert fake_db.fetch_messages(saved_id)[-1]["content"] == "New reply"
     assert fake_db.conversations[0]["title"] == "Selected"
+
+
+@pytest.mark.parametrize("title, expected", [
+    ("Renamed", "Renamed"),
+    ("  A pasted\n\t title   here  ", "A pasted title here"),
+    ("x" * 200, "x" * 200),
+    ("  " + "x" * 200 + "\n", "x" * 200),
+])
+def test_rename_conversation(
+    monkeypatch: pytest.MonkeyPatch, title: str, expected: str
+) -> None:
+    fake_db = FakeDb()
+    conversation_id, _, _, _ = fake_db.insert_exchange_with_steps(None, "Original", "Reply", [])
+    client = make_client(fake_db, monkeypatch)
+
+    response = client.patch(f"/api/conversations/{conversation_id}", json={"title": title})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": conversation_id, "title": expected, "created_at": "2026-01-01T00:00:00Z",
+    }
+    assert client.get("/api/conversations").json()[0]["title"] == expected
+
+
+@pytest.mark.parametrize("title", ["", "   ", "\n\t  ", "x" * 201])
+def test_rename_conversation_rejects_invalid_title(
+    monkeypatch: pytest.MonkeyPatch, title: str
+) -> None:
+    fake_db = FakeDb()
+    conversation_id, _, _, _ = fake_db.insert_exchange_with_steps(None, "Original", "Reply", [])
+    client = make_client(fake_db, monkeypatch)
+
+    response = client.patch(f"/api/conversations/{conversation_id}", json={"title": title})
+
+    assert response.status_code == 422
+    assert fake_db.conversations[0]["title"] == "Original"
+
+
+def test_delete_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_db = FakeDb()
+    conversation_id, _, _, _ = fake_db.insert_exchange_with_steps(None, "Original", "Reply", [])
+    fake_db.insert_exchange_with_steps(None, "Keep", "Reply", [])
+    client = make_client(fake_db, monkeypatch)
+
+    response = client.delete(f"/api/conversations/{conversation_id}")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert [row["title"] for row in client.get("/api/conversations").json()] == ["Keep"]
+
+
+@pytest.mark.parametrize("method", ["PATCH", "DELETE"])
+def test_conversation_mutation_unknown_id(monkeypatch: pytest.MonkeyPatch, method: str) -> None:
+    client = make_client(FakeDb(), monkeypatch)
+
+    response = client.request(method, f"/api/conversations/{uuid4()}", json={"title": "New"})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Conversation not found."
+
+
+@pytest.mark.parametrize("method", ["PATCH", "DELETE"])
+def test_conversation_mutation_requires_uuid(monkeypatch: pytest.MonkeyPatch, method: str) -> None:
+    client = make_client(FakeDb(), monkeypatch)
+
+    response = client.request(method, "/api/conversations/invalid", json={"title": "New"})
+
+    assert response.status_code == 422
+
+
+def test_cors_allows_patch() -> None:
+    middleware = next(item for item in app.user_middleware if "allow_methods" in item.kwargs)
+    assert "PATCH" in middleware.kwargs["allow_methods"]
+    client = TestClient(app)
+
+    response = client.options("/api/conversations", headers={
+        "Origin": middleware.kwargs["allow_origins"][0],
+        "Access-Control-Request-Method": "PATCH",
+        "Access-Control-Request-Headers": "content-type",
+    })
+
+    assert response.status_code == 200
+    assert "PATCH" in response.headers["access-control-allow-methods"]

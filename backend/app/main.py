@@ -4,7 +4,7 @@ from uuid import UUID
 from anthropic import Anthropic
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from supabase import Client
 
 from app import agent, claude_client, db
@@ -15,7 +15,7 @@ app = FastAPI(title="Loupe API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.environ.get("FRONTEND_ORIGIN", "http://localhost:3000")],
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -29,6 +29,18 @@ class ConversationOut(BaseModel):
     id: str
     title: str | None
     created_at: str
+
+
+class ConversationUpdate(BaseModel):
+    title: str
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, title: str) -> str:
+        title = " ".join(title.split())
+        if not title or len(title) > 200:
+            raise ValueError("Title must contain between 1 and 200 characters.")
+        return title
 
 
 class StepOut(BaseModel):
@@ -88,6 +100,27 @@ def forget_memory(memory_id: UUID, client: Client = Depends(get_db_client)) -> R
 @app.get("/api/conversations", response_model=list[ConversationOut])
 def list_conversations(client: Client = Depends(get_db_client)) -> list[dict]:
     return db.fetch_conversations(client)
+
+
+@app.patch("/api/conversations/{conversation_id}", response_model=ConversationOut)
+def rename_conversation(
+    conversation_id: UUID,
+    body: ConversationUpdate,
+    client: Client = Depends(get_db_client),
+) -> dict:
+    conversation = db.rename_conversation(client, str(conversation_id), body.title)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return conversation
+
+
+@app.delete("/api/conversations/{conversation_id}", status_code=204)
+def delete_conversation(
+    conversation_id: UUID, client: Client = Depends(get_db_client)
+) -> Response:
+    if not db.delete_conversation(client, str(conversation_id)):
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return Response(status_code=204)
 
 
 @app.get("/api/messages", response_model=list[MessageOut])
