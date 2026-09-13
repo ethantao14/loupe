@@ -7,15 +7,18 @@ from supabase import Client
 from app import db
 
 
-@pytest.mark.parametrize("table", ["messages", "steps"])
+@pytest.mark.parametrize("table", ["messages", "steps", "conversations"])
 @pytest.mark.parametrize("row_count", [0, 1000, 2003])
 def test_fetch_paginates_in_order(table: str, row_count: int) -> None:
     rows = [{"id": str(index), "seq": index} for index in range(row_count)]
+    if table == "conversations":
+        rows.reverse()
     offsets = list(range(0, row_count + 1, 1000))
     client = Mock(spec=Client)
     query = client.table.return_value
     query.select.return_value = query
     query.in_.return_value = query
+    query.eq.return_value = query
     query.order.return_value = query
     query.range.return_value = query
     query.execute.side_effect = [
@@ -23,8 +26,13 @@ def test_fetch_paginates_in_order(table: str, row_count: int) -> None:
     ]
 
     if table == "messages":
-        result = db.fetch_messages(client)
+        result = db.fetch_messages(client, "conversation-id")
+        assert query.eq.call_args_list == [
+            call("conversation_id", "conversation-id") for _ in offsets
+        ]
         query.in_.assert_not_called()
+    elif table == "conversations":
+        result = db.fetch_conversations(client)
     else:
         result = db.fetch_steps(client, ["assistant-id"])
         assert query.in_.call_args_list == [call("message_id", ["assistant-id"]) for _ in offsets]
@@ -32,7 +40,8 @@ def test_fetch_paginates_in_order(table: str, row_count: int) -> None:
     assert result == rows
     assert client.table.call_args_list == [call(table) for _ in offsets]
     assert query.select.call_args_list == [call("*") for _ in offsets]
-    assert query.order.call_args_list == [call("seq") for _ in offsets]
+    order = call("seq", desc=True) if table == "conversations" else call("seq")
+    assert query.order.call_args_list == [order for _ in offsets]
     assert query.range.call_args_list == [call(offset, offset + 999) for offset in offsets]
     assert query.execute.call_count == len(offsets)
 
@@ -98,7 +107,10 @@ def test_fetch_steps_batches_ids_and_paginates_in_order() -> None:
         ],
     ],
 )
-def test_insert_exchange_with_steps_uses_one_rpc(steps: list[dict]) -> None:
+@pytest.mark.parametrize("conversation_id", [None, "conversation-id"])
+def test_insert_exchange_with_steps_uses_one_rpc(
+    steps: list[dict], conversation_id: str | None
+) -> None:
     client = Mock(spec=Client)
     user = {"id": "user-id", "role": "user", "content": "Hi"}
     reply = {"id": "assistant-id", "role": "assistant", "content": "Hello!"}
@@ -106,15 +118,25 @@ def test_insert_exchange_with_steps_uses_one_rpc(steps: list[dict]) -> None:
         {"id": str(index), "message_id": reply["id"], **step} for index, step in enumerate(steps)
     ]
     client.rpc.return_value.execute.return_value = SimpleNamespace(
-        data={"user": user, "reply": reply, "steps": stored_steps}
+        data={
+            "conversation_id": "conversation-id",
+            "user": user,
+            "reply": reply,
+            "steps": stored_steps,
+        }
     )
 
-    result = db.insert_exchange_with_steps(client, "Hi", "Hello!", steps)
+    result = db.insert_exchange_with_steps(client, conversation_id, "Hi", "Hello!", steps)
 
-    assert result == (user, reply, stored_steps)
+    assert result == ("conversation-id", user, reply, stored_steps)
     client.rpc.assert_called_once_with(
         "insert_exchange_with_steps",
-        {"user_content": "Hi", "reply_content": "Hello!", "steps": steps},
+        {
+            "conversation": conversation_id,
+            "user_content": "Hi",
+            "reply_content": "Hello!",
+            "steps": steps,
+        },
     )
     client.rpc.return_value.execute.assert_called_once_with()
     client.table.assert_not_called()
@@ -125,7 +147,7 @@ def test_insert_exchange_with_steps_propagates_rpc_failure() -> None:
     client.rpc.return_value.execute.side_effect = RuntimeError("Step insert failed")
 
     with pytest.raises(RuntimeError, match="Step insert failed"):
-        db.insert_exchange_with_steps(client, "Hi", "Hello!", [])
+        db.insert_exchange_with_steps(client, None, "Hi", "Hello!", [])
 
     client.rpc.return_value.execute.assert_called_once_with()
     client.table.assert_not_called()
@@ -186,3 +208,37 @@ def test_fetch_memories_paginates_newest_first(row_count, limit, ranges):
     assert query.order.call_args_list == [call("seq", desc=True)] * len(ranges)
     assert query.range.call_args_list == [call(start, end) for start, end in ranges]
     assert query.execute.call_count == len(ranges)
+
+
+@pytest.mark.parametrize("conversation_id", [None, "newest-id"])
+def test_fetch_latest_conversation_id(conversation_id: str | None) -> None:
+    client = Mock(spec=Client)
+    query = client.table.return_value
+    query.select.return_value = query
+    query.order.return_value = query
+    query.limit.return_value = query
+    query.execute.return_value = SimpleNamespace(
+        data=[] if conversation_id is None else [{"id": conversation_id}]
+    )
+
+    assert db.fetch_latest_conversation_id(client) == conversation_id
+    client.table.assert_called_once_with("conversations")
+    query.select.assert_called_once_with("id")
+    query.order.assert_called_once_with("seq", desc=True)
+    query.limit.assert_called_once_with(1)
+
+
+@pytest.mark.parametrize("exists", [False, True])
+def test_conversation_exists(exists: bool) -> None:
+    client = Mock(spec=Client)
+    query = client.table.return_value
+    query.select.return_value = query
+    query.eq.return_value = query
+    query.limit.return_value = query
+    query.execute.return_value = SimpleNamespace(data=[{"id": "chat-id"}] if exists else [])
+
+    assert db.conversation_exists(client, "chat-id") is exists
+    client.table.assert_called_once_with("conversations")
+    query.select.assert_called_once_with("id")
+    query.eq.assert_called_once_with("id", "chat-id")
+    query.limit.assert_called_once_with(1)

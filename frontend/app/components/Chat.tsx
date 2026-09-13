@@ -4,9 +4,11 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import {
   deleteMemory,
+  fetchConversations,
   fetchMemories,
   fetchMessages,
   sendMessage,
+  type Conversation,
   type Memory,
   type Message,
   type Step,
@@ -212,29 +214,65 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
 }
 
 export default function Chat() {
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationId, setConversationId] = useState<string | undefined>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [memoryVersion, setMemoryVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [conversationError, setConversationError] = useState<string | null>(null);
+  const loadSequence = useRef(0);
+  const conversationSequence = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
-    fetchMessages()
-      .then((history) => {
-        if (!cancelled) setMessages(history);
-      })
-      .catch(() => {
-        if (!cancelled) setError("Could not load conversation history.");
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
+    const sequence = ++loadSequence.current;
+    const listSequence = ++conversationSequence.current;
+    async function loadInitialConversation() {
+      try {
+        const available = await fetchConversations();
+        if (cancelled) return;
+        if (listSequence === conversationSequence.current) setConversations(available);
+        if (sequence !== loadSequence.current) return;
+        const latestId = available[0]?.id;
+        setConversationId(latestId);
+        if (latestId) {
+          const history = await fetchMessages(latestId);
+          if (!cancelled && sequence === loadSequence.current) setMessages(history);
+        }
+      } catch {
+        if (!cancelled && sequence === loadSequence.current) {
+          setError("Could not load conversations or history.");
+        }
+      } finally {
+        if (!cancelled && sequence === loadSequence.current) setIsLoading(false);
+      }
+    }
+    void loadInitialConversation();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  async function selectConversation(id?: string) {
+    const sequence = ++loadSequence.current;
+    setConversationId(id);
+    setMessages([]);
+    setDraft("");
+    setError(null);
+    setIsLoading(id !== undefined);
+    if (id === undefined) return;
+    try {
+      const history = await fetchMessages(id);
+      if (sequence === loadSequence.current) setMessages(history);
+    } catch {
+      if (sequence === loadSequence.current) setError("Could not load conversation history.");
+    } finally {
+      if (sequence === loadSequence.current) setIsLoading(false);
+    }
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -245,8 +283,20 @@ export default function Chat() {
     setIsSending(true);
     setError(null);
     try {
-      const { user, reply } = await sendMessage(content);
+      const { conversation_id: savedId, user, reply } = await sendMessage(content, conversationId);
+      setConversationId(savedId);
       setMessages((current) => [...current, user, reply]);
+      ++conversationSequence.current;
+      setConversations((current) => current.some((item) => item.id === savedId) ? current : [
+        { id: savedId, title: null, created_at: user.created_at },
+        ...current,
+      ]);
+      setConversationError(null);
+      try {
+        setConversations(await fetchConversations());
+      } catch {
+        setConversationError("Could not refresh conversations.");
+      }
     } catch {
       setError("Could not send that message.");
       setDraft(content);
@@ -258,49 +308,79 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-neutral-950 text-neutral-100">
-      <header className="border-b border-neutral-800 px-6 py-4">
-        <h1 className="text-lg font-semibold">Loupe</h1>
-      </header>
+    <div className="flex h-screen min-w-0 overflow-hidden bg-neutral-950 text-neutral-100">
+      <aside className="flex w-32 shrink-0 flex-col border-r border-neutral-800 p-2 min-[480px]:w-56 sm:w-64 sm:p-4">
+        <button
+          type="button"
+          onClick={() => void selectConversation()}
+          disabled={isSending}
+          className="mb-4 rounded-md border border-neutral-700 px-3 py-2 text-left text-sm hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50"
+        >
+          New chat
+        </button>
+        <nav aria-label="Conversations" className="min-h-0 space-y-1 overflow-y-auto">
+          {conversations.map((conversation) => (
+            <button
+              key={conversation.id}
+              type="button"
+              aria-current={conversation.id === conversationId ? "page" : undefined}
+              disabled={isSending}
+              onClick={() => void selectConversation(conversation.id)}
+              className={`block w-full truncate rounded-md px-3 py-2 text-left text-sm hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50 ${
+                conversation.id === conversationId ? "bg-neutral-800 text-white" : "text-neutral-400"
+              }`}
+            >
+              {conversation.title ?? "New conversation"}
+            </button>
+          ))}
+        </nav>
+        {conversationError ? <p role="alert" className="mt-3 text-sm text-red-400">{conversationError}</p> : null}
+      </aside>
+      <main className="flex min-w-0 flex-1 flex-col">
+        <header className="border-b border-neutral-800 px-6 py-4">
+          <h1 className="text-lg font-semibold">Loupe</h1>
+        </header>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-6 py-6">
-        <MemoryPanel refreshToken={memoryVersion} />
-        {messages.length === 0 && !error ? (
-          <p className="text-neutral-500">Start the conversation below.</p>
-        ) : null}
-        {messages.map((message) => (
-          <div key={message.id} className="max-w-2xl">
-            <p className="mb-1 text-xs uppercase tracking-wide text-neutral-500">
-              {message.role}
-            </p>
-            <p className="whitespace-pre-wrap">{message.content}</p>
-            {message.role === "assistant" && message.steps.length > 0 ? (
-              <StepTrace steps={message.steps} />
-            ) : null}
-          </div>
-        ))}
-        {isSending ? <p className="text-neutral-500">Thinking...</p> : null}
-        {error ? <p className="text-red-400">{error}</p> : null}
-      </div>
-
-      <form onSubmit={handleSubmit} className="border-t border-neutral-800 px-6 py-4">
-        <div className="flex gap-3">
-          <input
-            aria-label="Message"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="Ask something"
-            className="flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 outline-none focus:border-neutral-500"
-          />
-          <button
-            type="submit"
-            disabled={isSending || isLoading}
-            className="rounded-md bg-neutral-100 px-4 py-2 font-medium text-neutral-900 disabled:opacity-50"
-          >
-            Send
-          </button>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-6 sm:px-6 [overflow-wrap:anywhere]">
+          <MemoryPanel refreshToken={memoryVersion} />
+          {isLoading ? <p className="text-neutral-500">Loading conversation...</p> : null}
+          {messages.length === 0 && !error && !isLoading ? (
+            <p className="text-neutral-500">Start the conversation below.</p>
+          ) : null}
+          {messages.map((message) => (
+            <div key={message.id} className="max-w-2xl">
+              <p className="mb-1 text-xs uppercase tracking-wide text-neutral-500">
+                {message.role}
+              </p>
+              <p className="whitespace-pre-wrap">{message.content}</p>
+              {message.role === "assistant" && message.steps.length > 0 ? (
+                <StepTrace steps={message.steps} />
+              ) : null}
+            </div>
+          ))}
+          {isSending ? <p className="text-neutral-500">Thinking...</p> : null}
+          {error ? <p className="text-red-400">{error}</p> : null}
         </div>
-      </form>
+
+        <form onSubmit={handleSubmit} className="border-t border-neutral-800 px-3 py-4 sm:px-6">
+          <div className="flex flex-wrap gap-3">
+            <input
+              aria-label="Message"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="Ask something"
+              className="min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 outline-none focus:border-neutral-500"
+            />
+            <button
+              type="submit"
+              disabled={isSending || isLoading}
+              className="rounded-md bg-neutral-100 px-4 py-2 font-medium text-neutral-900 disabled:opacity-50"
+            >
+              Send
+            </button>
+          </div>
+        </form>
+      </main>
     </div>
   );
 }
