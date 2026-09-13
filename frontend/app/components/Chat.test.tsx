@@ -2,11 +2,12 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Memory, Message, Step } from "@/lib/api";
+import type { Conversation, Memory, Message, Step } from "@/lib/api";
 
 import Chat from "./Chat";
 
 vi.mock("@/lib/api", () => ({
+  fetchConversations: vi.fn(),
   fetchMessages: vi.fn(),
   sendMessage: vi.fn(),
   fetchMemories: vi.fn(),
@@ -14,10 +15,16 @@ vi.mock("@/lib/api", () => ({
 }));
 
 const api = await import("@/lib/api");
+const fetchConversations = vi.mocked(api.fetchConversations);
 const fetchMessages = vi.mocked(api.fetchMessages);
 const sendMessage = vi.mocked(api.sendMessage);
 const fetchMemories = vi.mocked(api.fetchMemories);
 const deleteMemory = vi.mocked(api.deleteMemory);
+
+const conversations: Conversation[] = [
+  { id: "chat-2", title: "Latest chat", created_at: "2026-01-02T00:00:00Z" },
+  { id: "chat-1", title: "Earlier chat", created_at: "2026-01-01T00:00:00Z" },
+];
 
 const rememberedFacts: Memory[] = [
   { id: "memory-2", fact: "The user prefers Python.", created_at: "2026-01-02T00:00:00Z" },
@@ -43,6 +50,7 @@ const traceSteps: Step[] = [
 describe("Chat", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    fetchConversations.mockResolvedValue(conversations);
     fetchMemories.mockResolvedValue(rememberedFacts);
     deleteMemory.mockResolvedValue(undefined);
   });
@@ -224,6 +232,7 @@ describe("Chat", () => {
   it("sends a message and shows both turns", async () => {
     fetchMessages.mockResolvedValue([]);
     sendMessage.mockResolvedValue({
+      conversation_id: "chat-2",
       user: message("1", "user", "Hello"),
       reply: message("2", "assistant", "Hi back"),
     });
@@ -232,7 +241,7 @@ describe("Chat", () => {
     await userEvent.type(screen.getByLabelText("Message"), "Hello");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith("Hello"));
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith("Hello", "chat-2"));
     expect(await screen.findByText("Hello")).toBeInTheDocument();
     expect(await screen.findByText("Hi back")).toBeInTheDocument();
   });
@@ -301,6 +310,7 @@ describe("Chat", () => {
   it("shows a new reply's trace without refetching history", async () => {
     fetchMessages.mockResolvedValue([]);
     sendMessage.mockResolvedValue({
+      conversation_id: "chat-2",
       user: message("1", "user", "Read the page"),
       reply: message("2", "assistant", "Summary", traceSteps),
     });
@@ -323,6 +333,7 @@ describe("Chat", () => {
     let finishDelete: () => void = () => {};
     deleteMemory.mockReturnValueOnce(new Promise((resolve) => { finishDelete = resolve; }));
     sendMessage.mockResolvedValue({
+      conversation_id: "chat-2",
       user: message("1", "user", "Hello"),
       reply: message("2", "assistant", "Hi back"),
     });
@@ -361,6 +372,7 @@ describe("Chat", () => {
       new Promise((resolve) => { finishLoading = resolve; }),
     ).mockResolvedValueOnce([...rememberedFacts, newFact]);
     sendMessage.mockResolvedValue({
+      conversation_id: "chat-2",
       user: message("1", "user", "Remember my dog is a corgi"),
       reply: message("2", "assistant", "Noted."),
     });
@@ -391,6 +403,7 @@ describe("Chat", () => {
       .mockRejectedValueOnce(new Error("network"))
       .mockResolvedValueOnce([...rememberedFacts, newFact]);
     sendMessage.mockResolvedValue({
+      conversation_id: "chat-2",
       user: message("1", "user", "Remember my dog is a corgi"),
       reply: message("2", "assistant", "Noted."),
     });
@@ -422,6 +435,7 @@ describe("Chat", () => {
     fetchMessages.mockResolvedValue([]);
     fetchMemories.mockResolvedValueOnce(rememberedFacts);
     sendMessage.mockResolvedValue({
+      conversation_id: "chat-2",
       user: message("1", "user", "Remember my dog is a corgi"),
       reply: message("2", "assistant", "Noted."),
     });
@@ -444,6 +458,7 @@ describe("Chat", () => {
     // The delete discarded the whole in flight response, new facts included.
     fetchMessages.mockResolvedValue([]);
     sendMessage.mockResolvedValue({
+      conversation_id: "chat-2",
       user: message("1", "user", "remember something"),
       reply: message("2", "assistant", "Noted."),
     });
@@ -494,4 +509,179 @@ describe("Chat", () => {
 
     expect(await screen.findByText("Stored before the failure")).toBeInTheDocument();
   });
+});
+
+describe("conversations", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    fetchConversations.mockResolvedValue(conversations);
+    fetchMessages.mockImplementation(async (id) => [
+      message(`${id}-message`, "user", `History for ${id}`),
+    ]);
+    fetchMemories.mockResolvedValue(rememberedFacts);
+  });
+
+  it("lists conversations newest first and loads the latest on mount", async () => {
+    render(<Chat />);
+
+    expect(await screen.findByText("History for chat-2")).toBeVisible();
+    const buttons = screen.getByRole("navigation", { name: "Conversations" })
+      .querySelectorAll("button");
+    expect(Array.from(buttons, (button) => button.textContent)).toEqual([
+      "Latest chat", "Earlier chat",
+    ]);
+    expect(buttons[0]).toHaveAttribute("aria-current", "page");
+    expect(buttons[1]).not.toHaveAttribute("aria-current");
+    expect(fetchMessages).toHaveBeenCalledExactlyOnceWith("chat-2");
+  });
+
+  it("switches history and marks the selected conversation", async () => {
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    await userEvent.click(screen.getByRole("button", { name: "Earlier chat" }));
+
+    expect(await screen.findByText("History for chat-1")).toBeVisible();
+    expect(screen.queryByText("History for chat-2")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Earlier chat" }))
+      .toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Latest chat" })).not.toHaveAttribute("aria-current");
+    expect(fetchMessages).toHaveBeenLastCalledWith("chat-1");
+  });
+
+  it("clears history and the draft for an unsaved new chat", async () => {
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    await userEvent.type(screen.getByLabelText("Message"), "Unsent draft");
+    await userEvent.click(screen.getByRole("button", { name: "New chat" }));
+
+    expect(screen.queryByText("History for chat-2")).not.toBeInTheDocument();
+    expect(screen.getByText("Start the conversation below.")).toBeVisible();
+    expect(screen.getByLabelText("Message")).toHaveValue("");
+    expect(document.querySelector('[aria-current="page"]')).toBeNull();
+    expect(fetchMessages).toHaveBeenCalledTimes(1);
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(fetchConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates a conversation on first send and uses its id for the next send", async () => {
+    const created: Conversation = {
+      id: "chat-3", title: "A new topic", created_at: "2026-01-03T00:00:00Z",
+    };
+    fetchConversations.mockResolvedValueOnce(conversations)
+      .mockResolvedValue([created, ...conversations]);
+    sendMessage.mockResolvedValueOnce({
+      conversation_id: created.id,
+      user: message("u1", "user", "A new topic"),
+      reply: message("a1", "assistant", "New reply"),
+    }).mockResolvedValueOnce({
+      conversation_id: created.id,
+      user: message("u2", "user", "Continue"),
+      reply: message("a2", "assistant", "Next reply"),
+    });
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    await userEvent.click(screen.getByRole("button", { name: "New chat" }));
+    await userEvent.type(screen.getByLabelText("Message"), "A new topic");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    const saved = await screen.findByRole("button", { name: "A new topic" });
+    expect(saved).toHaveAttribute("aria-current", "page");
+    expect(saved.parentElement?.firstElementChild).toBe(saved);
+    expect(screen.getByText("New reply")).toBeVisible();
+    expect(sendMessage).toHaveBeenNthCalledWith(1, "A new topic", undefined);
+    await userEvent.type(screen.getByLabelText("Message"), "Continue");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("Next reply")).toBeVisible();
+    expect(sendMessage).toHaveBeenNthCalledWith(2, "Continue", "chat-3");
+    expect(fetchMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a fallback title and starts empty when there are no conversations", async () => {
+    fetchConversations.mockResolvedValueOnce([]);
+    const { unmount } = render(<Chat />);
+    expect(await screen.findByText("Start the conversation below.")).toBeVisible();
+    expect(fetchMessages).not.toHaveBeenCalled();
+    unmount();
+    fetchConversations.mockResolvedValue([{ ...conversations[0], title: null }]);
+    render(<Chat />);
+    expect(await screen.findByRole("button", { name: "New conversation" })).toBeVisible();
+  });
+
+  it("ignores an out-of-order response after switching away", async () => {
+    let finishSlowLoad: (history: Message[]) => void = () => {};
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    fetchMessages.mockReturnValueOnce(new Promise((resolve) => { finishSlowLoad = resolve; }));
+    await userEvent.click(screen.getByRole("button", { name: "Earlier chat" }));
+    await userEvent.click(screen.getByRole("button", { name: "Latest chat" }));
+    expect(await screen.findByText("History for chat-2")).toBeVisible();
+
+    await act(async () => { finishSlowLoad([message("old", "user", "Stale history")]); });
+
+    expect(screen.queryByText("Stale history")).not.toBeInTheDocument();
+    expect(screen.getByText("History for chat-2")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Latest chat" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("ignores an initial history load after New chat is selected", async () => {
+    let finishSlowLoad: (history: Message[]) => void = () => {};
+    fetchMessages.mockReturnValueOnce(new Promise((resolve) => { finishSlowLoad = resolve; }));
+    render(<Chat />);
+    await screen.findByRole("button", { name: "Latest chat" });
+    await userEvent.click(screen.getByRole("button", { name: "New chat" }));
+
+    await act(async () => { finishSlowLoad([message("old", "user", "Stale history")]); });
+
+    expect(screen.queryByText("Stale history")).not.toBeInTheDocument();
+    expect(screen.getByText("Start the conversation below.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+  });
+
+  it("keeps a successful exchange when refreshing conversations fails", async () => {
+    fetchConversations.mockResolvedValueOnce(conversations).mockRejectedValueOnce(new Error("offline"));
+    sendMessage.mockResolvedValue({
+      conversation_id: "chat-3",
+      user: message("u1", "user", "New topic"),
+      reply: message("a1", "assistant", "Saved reply"),
+    });
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    await userEvent.click(screen.getByRole("button", { name: "New chat" }));
+    await userEvent.type(screen.getByLabelText("Message"), "New topic");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Saved reply")).toBeVisible();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not refresh conversations.");
+    expect(screen.queryByText("Could not send that message.")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Message")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "New conversation" }))
+      .toHaveAttribute("aria-current", "page");
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let a slow initial list overwrite a newly saved conversation", async () => {
+    let finishInitialList: (items: Conversation[]) => void = () => {};
+    const created: Conversation = {
+      id: "chat-3", title: "New topic", created_at: "2026-01-03T00:00:00Z",
+    };
+    fetchConversations.mockReturnValueOnce(new Promise((resolve) => { finishInitialList = resolve; }))
+      .mockResolvedValueOnce([created, ...conversations]);
+    sendMessage.mockResolvedValue({
+      conversation_id: created.id,
+      user: message("u1", "user", "New topic"),
+      reply: message("a1", "assistant", "Saved reply"),
+    });
+    render(<Chat />);
+    await userEvent.click(screen.getByRole("button", { name: "New chat" }));
+    await userEvent.type(screen.getByLabelText("Message"), "New topic");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("button", { name: "New topic" });
+
+    await act(async () => { finishInitialList(conversations); });
+
+    expect(screen.getByRole("button", { name: "New topic" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByText("Saved reply")).toBeVisible();
+    expect(fetchMessages).not.toHaveBeenCalled();
+  });
+
 });

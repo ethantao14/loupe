@@ -1,4 +1,6 @@
 from types import SimpleNamespace
+from unittest.mock import Mock
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,22 +16,47 @@ def raise_api_error(client, history, memory_store):
 class FakeDb:
     def __init__(self) -> None:
         self.rows: list[dict] = []
+        self.conversations: list[dict] = []
         self.steps: list[dict] = []
         self.memories: list[dict] = []
 
-    def fetch_messages(self) -> list[dict]:
-        return list(self.rows)
+    def fetch_conversations(self) -> list[dict]:
+        return self.conversations[::-1]
+
+    def fetch_latest_conversation_id(self) -> str | None:
+        return self.conversations[-1]["id"] if self.conversations else None
+
+    def conversation_exists(self, conversation_id: str) -> bool:
+        return any(row["id"] == conversation_id for row in self.conversations)
+
+    def fetch_messages(self, conversation_id: str) -> list[dict]:
+        return [row for row in self.rows if row["conversation_id"] == conversation_id]
 
     def fetch_steps(self, message_ids: list[str]) -> list[dict]:
         return [step for step in self.steps if step["message_id"] in message_ids]
 
     def insert_exchange_with_steps(
-        self, user_content: str, reply_content: str, steps: list[dict]
-    ) -> tuple[dict, dict, list[dict]]:
-        inserted = []
+        self,
+        conversation_id: str | None,
+        user_content: str,
+        reply_content: str,
+        steps: list[dict],
+    ) -> tuple[str, dict, dict, list[dict]]:
+        if conversation_id is None:
+            conversation_id = str(uuid4())
+            self.conversations.append({
+                "id": conversation_id,
+                "title": None,
+                "created_at": "2026-01-01T00:00:00Z",
+            })
+        conversation = next(row for row in self.conversations if row["id"] == conversation_id)
+        if conversation["title"] is None:
+            conversation["title"] = " ".join(user_content.split())[:60] or None
+        inserted: list[dict] = []
         for role, content in (("user", user_content), ("assistant", reply_content)):
             row = {
                 "id": str(len(self.rows) + 1),
+                "conversation_id": conversation_id,
                 "role": role,
                 "content": content,
                 "created_at": "2026-01-01T00:00:00Z",
@@ -42,7 +69,7 @@ class FakeDb:
             row = {"id": str(len(self.steps) + 1), "message_id": reply["id"], **step}
             self.steps.append(row)
             inserted_steps.append(row)
-        return user_message, reply, inserted_steps
+        return conversation_id, user_message, reply, inserted_steps
 
 
 class FakeContentBlock:
@@ -68,19 +95,30 @@ class FakeClaudeClient:
             return FakeClaudeResponse("Hi there!")
 
 
-def make_client(fake_db: FakeDb, monkeypatch) -> TestClient:
-    monkeypatch.setattr(db, "fetch_memories", lambda client, limit: client.memories[::-1][:limit])
+def make_client(fake_db: FakeDb, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    monkeypatch.setattr(
+        db, "fetch_memories", lambda client, limit=None: client.memories[::-1][:limit]
+    )
     monkeypatch.setattr(
         db, "insert_memory", lambda client, fact: client.memories.append({"fact": fact})
     )
-    monkeypatch.setattr(db, "fetch_messages", lambda client: client.fetch_messages())
+    monkeypatch.setattr(db, "fetch_conversations", lambda client: client.fetch_conversations())
+    monkeypatch.setattr(
+        db, "fetch_latest_conversation_id", lambda client: client.fetch_latest_conversation_id()
+    )
+    monkeypatch.setattr(
+        db, "conversation_exists", lambda client, cid: client.conversation_exists(cid)
+    )
+    monkeypatch.setattr(db, "fetch_messages", lambda client, cid: client.fetch_messages(cid))
     monkeypatch.setattr(
         db, "fetch_steps", lambda client, message_ids: client.fetch_steps(message_ids)
     )
     monkeypatch.setattr(
         db,
         "insert_exchange_with_steps",
-        lambda client, user, reply, steps: client.insert_exchange_with_steps(user, reply, steps),
+        lambda client, cid, user, reply, steps: client.insert_exchange_with_steps(
+            cid, user, reply, steps
+        ),
     )
     app.dependency_overrides[get_db_client] = lambda: fake_db
     app.dependency_overrides[get_claude_client] = lambda: FakeClaudeClient()
@@ -122,11 +160,10 @@ def test_remembers_fact_and_recalls_it_in_later_conversation(monkeypatch):
     assert all(step["kind"] != "memory" for step in first.json()["reply"]["steps"])
 
     # A fresh conversation has no message history, but uses the same saved facts.
-    fake_db.rows.clear()
-    fake_db.steps.clear()
     second = client.post("/api/messages", json={"content": "What language do I prefer?"})
 
     assert second.status_code == 200
+    assert first.json()["conversation_id"] != second.json()["conversation_id"]
     assert "The user prefers Python." in requests[2]["system"]
     assert len(requests[2]["messages"]) == 1
     recalled = second.json()["reply"]["steps"][0]
@@ -156,6 +193,8 @@ def test_send_message_persists_and_replies(monkeypatch) -> None:
 
     assert response.status_code == 200
     body = response.json()
+    assert body["conversation_id"] == fake_db.conversations[0]["id"]
+    assert all(row["conversation_id"] == body["conversation_id"] for row in fake_db.rows)
     assert body["user"]["content"] == "Hello"
     assert body["reply"]["role"] == "assistant"
     assert body["reply"]["content"] == "Hi there!"
@@ -184,6 +223,7 @@ def test_send_message_persists_nothing_when_reply_fails(monkeypatch) -> None:
         client.post("/api/messages", json={"content": "Hello"})
 
     assert fake_db.rows == []
+    assert fake_db.conversations == []
     assert fake_db.steps == []
 
 
@@ -221,7 +261,8 @@ def test_list_messages_attaches_stored_steps(
     monkeypatch: pytest.MonkeyPatch, result_kind: str
 ) -> None:
     fake_db = FakeDb()
-    _, _, first_steps = fake_db.insert_exchange_with_steps(
+    conversation_id, _, _, first_steps = fake_db.insert_exchange_with_steps(
+        None,
         "Hello",
         "First answer",
         [
@@ -230,7 +271,8 @@ def test_list_messages_attaches_stored_steps(
             {"kind": "answer", "tool_name": None, "detail": "First answer"},
         ],
     )
-    _, _, second_steps = fake_db.insert_exchange_with_steps(
+    _, _, _, second_steps = fake_db.insert_exchange_with_steps(
+        conversation_id,
         "Again",
         "Second answer",
         [{"kind": "answer", "tool_name": None, "detail": "Second answer"}],
@@ -248,3 +290,90 @@ def test_list_messages_attaches_stored_steps(
             {key: value for key, value in step.items() if key != "message_id"}
             for step in stored_steps
         ]
+
+
+def test_list_conversations_newest_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_db = FakeDb()
+    client = make_client(fake_db, monkeypatch)
+    assert client.get("/api/conversations").json() == []
+    fake_db.insert_exchange_with_steps(None, "  First\n conversation  ", "Answer", [])
+    fake_db.insert_exchange_with_steps(None, "", "Answer", [])
+
+    response = client.get("/api/conversations")
+
+    assert response.status_code == 200
+    assert response.json() == fake_db.conversations[::-1]
+    assert response.json()[0]["title"] is None
+    assert response.json()[1]["title"] == "First conversation"
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_list_messages_scoped_to_conversation(
+    monkeypatch: pytest.MonkeyPatch, explicit: bool
+) -> None:
+    fake_db = FakeDb()
+    first_id, _, _, _ = fake_db.insert_exchange_with_steps(None, "First", "First reply", [])
+    latest_id, _, _, _ = fake_db.insert_exchange_with_steps(None, "Second", "Second reply", [])
+    client = make_client(fake_db, monkeypatch)
+
+    response = client.get(
+        "/api/messages", params={"conversation_id": first_id} if explicit else {}
+    )
+
+    assert response.status_code == 200
+    selected_id = first_id if explicit else latest_id
+    assert [row["id"] for row in response.json()] == [
+        row["id"] for row in fake_db.fetch_messages(selected_id)
+    ]
+
+
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_unknown_conversation_returns_404_without_model_call(
+    monkeypatch: pytest.MonkeyPatch, method: str
+) -> None:
+    fake_db = FakeDb()
+    client = make_client(fake_db, monkeypatch)
+    run_turn = Mock()
+    monkeypatch.setattr(agent, "run_turn", run_turn)
+    conversation_id = str(uuid4())
+
+    if method == "get":
+        response = client.get("/api/messages", params={"conversation_id": conversation_id})
+    else:
+        response = client.post(
+            "/api/messages", json={"content": "Hello", "conversation_id": conversation_id}
+        )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Conversation not found."
+    run_turn.assert_not_called()
+    assert fake_db.rows == []
+    assert fake_db.conversations == []
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_send_message_uses_only_selected_history(
+    monkeypatch: pytest.MonkeyPatch, existing: bool
+) -> None:
+    fake_db = FakeDb()
+    selected_id, _, _, _ = fake_db.insert_exchange_with_steps(None, "Selected", "Reply", [])
+    fake_db.insert_exchange_with_steps(None, "Unrelated", "Private reply", [])
+    client = make_client(fake_db, monkeypatch)
+    run_turn = Mock(return_value=agent.TurnResult("New reply", []))
+    monkeypatch.setattr(agent, "run_turn", run_turn)
+    history = fake_db.fetch_messages(selected_id) if existing else []
+    body = {"content": "Follow up"}
+    if existing:
+        body["conversation_id"] = selected_id
+
+    response = client.post("/api/messages", json=body)
+
+    assert response.status_code == 200
+    run_turn.assert_called_once()
+    assert run_turn.call_args.args[1] == [*history, {"role": "user", "content": "Follow up"}]
+    saved_id = response.json()["conversation_id"]
+    assert (saved_id == selected_id) is existing
+    assert len(fake_db.conversations) == (2 if existing else 3)
+    assert fake_db.fetch_messages(saved_id)[-2]["content"] == "Follow up"
+    assert fake_db.fetch_messages(saved_id)[-1]["content"] == "New reply"
+    assert fake_db.conversations[0]["title"] == "Selected"

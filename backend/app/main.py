@@ -1,6 +1,7 @@
 import os
 from uuid import UUID
 
+from anthropic import Anthropic
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -21,6 +22,13 @@ app.add_middleware(
 
 class MessageIn(BaseModel):
     content: str
+    conversation_id: UUID | None = None
+
+
+class ConversationOut(BaseModel):
+    id: str
+    title: str | None
+    created_at: str
 
 
 class StepOut(BaseModel):
@@ -39,6 +47,7 @@ class MessageOut(BaseModel):
 
 
 class SendMessageOut(BaseModel):
+    conversation_id: str
     user: MessageOut
     reply: MessageOut
 
@@ -56,11 +65,11 @@ def _with_steps(messages: list[dict], steps: list[dict]) -> list[dict]:
     return [{**message, "steps": by_message.get(message["id"], [])} for message in messages]
 
 
-def get_db_client():
+def get_db_client() -> Client:
     return db.get_client()
 
 
-def get_claude_client():
+def get_claude_client() -> Anthropic:
     return claude_client.get_client()
 
 
@@ -76,9 +85,25 @@ def forget_memory(memory_id: UUID, client: Client = Depends(get_db_client)) -> R
     return Response(status_code=204)
 
 
+@app.get("/api/conversations", response_model=list[ConversationOut])
+def list_conversations(client: Client = Depends(get_db_client)) -> list[dict]:
+    return db.fetch_conversations(client)
+
+
 @app.get("/api/messages", response_model=list[MessageOut])
-def list_messages(client=Depends(get_db_client)) -> list[dict]:
-    messages = db.fetch_messages(client)
+def list_messages(
+    conversation_id: UUID | None = None, client: Client = Depends(get_db_client)
+) -> list[dict]:
+    selected_id: str | None
+    if conversation_id is not None:
+        selected_id = str(conversation_id)
+        if not db.conversation_exists(client, selected_id):
+            raise HTTPException(status_code=404, detail="Conversation not found.")
+    else:
+        selected_id = db.fetch_latest_conversation_id(client)
+    if selected_id is None:
+        return []
+    messages = db.fetch_messages(client, selected_id)
     steps = db.fetch_steps(client, [m["id"] for m in messages if m["role"] == "assistant"])
     return _with_steps(messages, steps)
 
@@ -86,17 +111,21 @@ def list_messages(client=Depends(get_db_client)) -> list[dict]:
 @app.post("/api/messages", response_model=SendMessageOut)
 def send_message(
     body: MessageIn,
-    db_client=Depends(get_db_client),
-    llm_client=Depends(get_claude_client),
+    db_client: Client = Depends(get_db_client),
+    llm_client: Anthropic = Depends(get_claude_client),
 ) -> dict:
+    conversation_id = str(body.conversation_id) if body.conversation_id is not None else None
+    if conversation_id is not None and not db.conversation_exists(db_client, conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found.")
     # Messages and steps are persisted together after the reply succeeds.
     # Facts saved by remember persist independently of the exchange.
-    history = db.fetch_messages(db_client)
+    history = db.fetch_messages(db_client, conversation_id) if conversation_id is not None else []
     pending = [*history, {"role": "user", "content": body.content}]
     result = agent.run_turn(llm_client, pending, MemoryStore(db_client))
 
-    user_message, reply, steps = db.insert_exchange_with_steps(
+    conversation_id, user_message, reply, steps = db.insert_exchange_with_steps(
         db_client,
+        conversation_id,
         body.content,
         result.reply,
         [
@@ -104,4 +133,8 @@ def send_message(
             for step in result.steps
         ],
     )
-    return {"user": user_message, "reply": _with_steps([reply], steps)[0]}
+    return {
+        "conversation_id": conversation_id,
+        "user": user_message,
+        "reply": _with_steps([reply], steps)[0],
+    }
