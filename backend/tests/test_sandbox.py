@@ -331,14 +331,18 @@ def test_fails_closed_when_mandatory_limits_cannot_be_applied(
 
 @pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_run_tool_dispatches(memory_store):
-    assert tools.run_tool("run_python", {"code": "print(6 * 7)"}, memory_store) == "42\n"
+    assert tools.run_tool("run_python", {"code": "print(6 * 7)"}, memory_store) == (
+        tools.ToolOutcome(output="42\n", failed=False)
+    )
     assert tools.RUN_PYTHON_TOOL in tools.available_tools()
     assert tools.RUN_PYTHON_TOOL["input_schema"]["required"] == ["code"]
 
 
 @pytest.mark.parametrize("tool_input", [{}, {"code": None}, {"code": 123}])
 def test_run_tool_rejects_invalid_code(tool_input, memory_store):
-    assert tools.run_tool("run_python", tool_input, memory_store) == "Error: code must be a string."
+    assert tools.run_tool("run_python", tool_input, memory_store) == tools.ToolOutcome(
+        output="Error: code must be a string.", failed=True
+    )
 
 
 def test_tool_is_withheld_unless_enabled(monkeypatch):
@@ -351,8 +355,8 @@ def test_tool_is_withheld_unless_enabled(monkeypatch):
 def test_disabled_tool_refuses_to_run(monkeypatch, memory_store):
     monkeypatch.setattr(config, "ENABLE_CODE_EXECUTION", False)
 
-    assert tools.run_tool("run_python", {"code": "print(1)"}, memory_store) == (
-        "Error: The run_python tool is disabled."
+    assert tools.run_tool("run_python", {"code": "print(1)"}, memory_store) == tools.ToolOutcome(
+        output="Error: The run_python tool is disabled.", failed=True
     )
 
 

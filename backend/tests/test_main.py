@@ -187,12 +187,15 @@ def test_send_message_persists_nothing_when_reply_fails(monkeypatch) -> None:
     assert fake_db.steps == []
 
 
-def test_send_message_returns_tool_steps_in_order(monkeypatch) -> None:
+@pytest.mark.parametrize("result_kind", ["tool_result", "tool_error"])
+def test_send_message_returns_tool_steps_in_order(
+    monkeypatch: pytest.MonkeyPatch, result_kind: str
+) -> None:
     fake_db = FakeDb()
     client = make_client(fake_db, monkeypatch)
     steps = [
         agent.Step(kind="tool_call", tool_name="fetch_url", detail="{'url': 'example.com'}"),
-        agent.Step(kind="tool_result", tool_name="fetch_url", detail="Page content"),
+        agent.Step(kind=result_kind, tool_name="fetch_url", detail="Tool output"),
         agent.Step(kind="answer", detail="Here is the summary."),
     ]
     monkeypatch.setattr(
@@ -213,14 +216,17 @@ def test_send_message_returns_tool_steps_in_order(monkeypatch) -> None:
     assert all(step["message_id"] == reply["id"] for step in fake_db.steps)
 
 
-def test_list_messages_attaches_stored_steps(monkeypatch) -> None:
+@pytest.mark.parametrize("result_kind", ["tool_result", "tool_error"])
+def test_list_messages_attaches_stored_steps(
+    monkeypatch: pytest.MonkeyPatch, result_kind: str
+) -> None:
     fake_db = FakeDb()
     _, _, first_steps = fake_db.insert_exchange_with_steps(
         "Hello",
         "First answer",
         [
             {"kind": "tool_call", "tool_name": "fetch_url", "detail": "Input"},
-            {"kind": "tool_result", "tool_name": "fetch_url", "detail": "Output"},
+            {"kind": result_kind, "tool_name": "fetch_url", "detail": "Output"},
             {"kind": "answer", "tool_name": None, "detail": "First answer"},
         ],
     )

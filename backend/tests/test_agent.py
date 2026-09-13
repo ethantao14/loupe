@@ -60,7 +60,9 @@ def test_answers_without_tools(memory_store):
 
 
 def test_runs_tool_then_answers(monkeypatch, memory_store):
-    monkeypatch.setattr(tools, "run_tool", lambda name, tool_input, memory_store: "Page said hello")
+    monkeypatch.setattr(
+        tools, "run_tool", Mock(return_value=tools.ToolOutcome("Page said hello", failed=False))
+    )
     client = ScriptedClient(
         [tool_response("https://example.com"), text_response("The page says hello.")]
     )
@@ -82,6 +84,48 @@ def test_runs_tool_then_answers(monkeypatch, memory_store):
     assert sent[-1]["content"][0]["type"] == "tool_result"
     assert sent[-1]["content"][0]["content"] == "Page said hello"
     assert sent[-1]["content"][0]["tool_use_id"] == "tu_1"
+    assert sent[-1]["content"][0].get("is_error", False) is False
+    assert agent.RECOVERY_HINT not in sent[-1]["content"][0]["content"]
+
+
+@pytest.mark.parametrize(
+    "output, failed",
+    [
+        ("Error: Only http and https URLs are supported.", True),
+        ("Error: " + "x" * agent.MAX_DETAIL_CHARS, True),
+        ("Failure without an error prefix", True),
+        ("Error: quoted page content", False),
+    ],
+)
+def test_tool_outcome_controls_trace_and_recovery(
+    monkeypatch: pytest.MonkeyPatch, memory_store: Mock, output: str, failed: bool
+) -> None:
+    monkeypatch.setattr(
+        tools, "run_tool", Mock(return_value=tools.ToolOutcome(output=output, failed=failed))
+    )
+    client = ScriptedClient([tool_response("https://example.com"), text_response("Done")])
+
+    result = agent.run_turn(client, [{"role": "user", "content": "Read the page"}], memory_store)
+
+    expected_detail = output
+    if len(output) > agent.MAX_DETAIL_CHARS:
+        marker = "... [truncated]"
+        expected_detail = output[: agent.MAX_DETAIL_CHARS - len(marker)] + marker
+    assert result.steps[1] == agent.Step(
+        kind="tool_error" if failed else "tool_result",
+        tool_name="fetch_url",
+        detail=expected_detail,
+    )
+    assert agent.RECOVERY_HINT not in result.steps[1].detail
+    tool_result = client.requests[1]["messages"][-1]["content"][0]
+    assert tool_result["type"] == "tool_result"
+    assert tool_result["tool_use_id"] == "tu_1"
+    assert tool_result.get("is_error", False) is failed
+    if failed:
+        assert tool_result["content"] == f"{output}\n\n{agent.RECOVERY_HINT}"
+    else:
+        assert tool_result["content"] == output
+        assert agent.RECOVERY_HINT not in tool_result["content"]
 
 
 def test_tools_are_offered_to_the_model(memory_store):
@@ -96,7 +140,11 @@ def test_interleaved_text_and_tools_preserve_order(
     monkeypatch: pytest.MonkeyPatch, memory_store
 ) -> None:
     monkeypatch.setattr(
-        tools, "run_tool", lambda name, tool_input, memory_store: f"Result {tool_input['label']}"
+        tools,
+        "run_tool",
+        lambda name, tool_input, memory_store: tools.ToolOutcome(
+            output=f"Result {tool_input['label']}", failed=False
+        ),
     )
     response = Response(
         "tool_use",
@@ -134,7 +182,9 @@ def test_interleaved_text_and_tools_preserve_order(
 
 
 def test_stops_after_iteration_limit(monkeypatch, memory_store):
-    monkeypatch.setattr(tools, "run_tool", lambda name, tool_input, memory_store: "still going")
+    monkeypatch.setattr(
+        tools, "run_tool", Mock(return_value=tools.ToolOutcome("still going", failed=False))
+    )
     client = ScriptedClient(
         [tool_response("https://example.com") for _ in range(agent.MAX_ITERATIONS)]
     )
@@ -151,7 +201,9 @@ def test_recall_injects_facts_and_records_first_step(memory_store, monkeypatch):
     memory_store.recall_relevant.return_value = RecallResult(
         [(facts[0], 1.25), (facts[1], 0.5)], 12
     )
-    monkeypatch.setattr(tools, "run_tool", lambda name, tool_input, store: "Page content")
+    monkeypatch.setattr(
+        tools, "run_tool", Mock(return_value=tools.ToolOutcome("Page content", failed=False))
+    )
     client = ScriptedClient([tool_response("https://example.com"), text_response("Done")])
 
     result = agent.run_turn(client, [{"role": "user", "content": "Read the page"}], memory_store)
@@ -270,7 +322,9 @@ def test_python_trace_describes_confinement_only_when_enabled(monkeypatch, memor
         return_value="Docker unavailable: daemon stopped; using POSIX resource limits"
     )
     monkeypatch.setattr(agent.confine, "describe", description)
-    monkeypatch.setattr(tools, "run_tool", lambda *args: "4\n")
+    monkeypatch.setattr(
+        tools, "run_tool", Mock(return_value=tools.ToolOutcome("4\n", failed=False))
+    )
     client = ScriptedClient([
         Response("tool_use", [Block(
             "tool_use", name="run_python", block_id="tu_python", tool_input={"code": "print(4)"},

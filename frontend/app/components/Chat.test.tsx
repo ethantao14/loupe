@@ -189,6 +189,23 @@ describe("Chat", () => {
     );
   });
 
+  it("renders a failed tool step with a red Tool error badge", async () => {
+    fetchMessages.mockResolvedValue([message("1", "assistant", "Trying again", [{
+      id: "error-1", kind: "tool_error", tool_name: "fetch_url", detail: "Error: Could not fetch",
+    }])]);
+
+    render(<Chat />);
+    await userEvent.click(await screen.findByRole("button", { name: "Show reasoning (1 step)" }));
+
+    const badge = screen.getByText("Tool error");
+    expect(badge).toBeVisible();
+    expect(badge).toHaveClass("bg-red-400/10", "text-red-300");
+    expect(screen.getByText("fetch_url")).toBeVisible();
+    expect(screen.getByLabelText("Step 1: Tool error detail")).toHaveTextContent(
+      "Error: Could not fetch",
+    );
+  });
+
   it.each(["future_kind", "toString", "__proto__"])(
     "renders an unknown step kind safely: %s", async (kind) => {
       const unknownStep = {

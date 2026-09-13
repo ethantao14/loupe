@@ -2,6 +2,7 @@ import ipaddress
 import re
 import socket
 import time
+from dataclasses import dataclass
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
@@ -79,6 +80,15 @@ def available_tools() -> list[ToolParam]:
 
 class ToolError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class ToolOutcome:
+    """What a tool produced, and whether it failed. Failures come back as an
+    outcome rather than an exception so the model can react and retry."""
+
+    output: str
+    failed: bool
 
 
 class Target:
@@ -253,9 +263,7 @@ def fetch_url(url: str) -> str:
     raise ToolError(f"Too many redirects starting from {url}")
 
 
-def run_tool(name: str, tool_input: dict, memory_store: MemoryStore) -> str:
-    # Failures come back as text so the model can react to them and retry,
-    # rather than breaking the whole turn.
+def run_tool(name: str, tool_input: dict, memory_store: MemoryStore) -> ToolOutcome:
     try:
         if name == "remember":
             fact = tool_input.get("fact")
@@ -267,16 +275,19 @@ def run_tool(name: str, tool_input: dict, memory_store: MemoryStore) -> str:
                 memory_store.remember(fact)
             except Exception as error:
                 raise ToolError("Could not save memory. Please try again.") from error
-            return "Remembered: " + fact
+            return ToolOutcome(output="Remembered: " + fact, failed=False)
         if name == "fetch_url":
-            return fetch_url(tool_input["url"])
+            url = tool_input.get("url")
+            if not isinstance(url, str):
+                raise ToolError("url must be a string.")
+            return ToolOutcome(output=fetch_url(url), failed=False)
         if name == "run_python":
             if not config.ENABLE_CODE_EXECUTION:
                 raise ToolError("The run_python tool is disabled.")
             code = tool_input.get("code")
             if not isinstance(code, str):
                 raise ToolError("code must be a string.")
-            return run_python(code)
+            return ToolOutcome(output=run_python(code), failed=False)
         raise ToolError(f"Unknown tool: {name}")
     except ToolError as error:
-        return f"Error: {error}"
+        return ToolOutcome(output=f"Error: {error}", failed=True)
