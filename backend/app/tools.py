@@ -287,7 +287,8 @@ def run_tool(name: str, tool_input: dict, memory_store: MemoryStore) -> ToolOutc
             code = tool_input.get("code")
             if not isinstance(code, str):
                 raise ToolError("code must be a string.")
-            return ToolOutcome(output=run_python(code), failed=False)
+            result = run_python(code)
+            return ToolOutcome(output=result.output, failed=result.failed)
         raise ToolError(f"Unknown tool: {name}")
     except ToolError as error:
         return ToolOutcome(output=f"Error: {error}", failed=True)

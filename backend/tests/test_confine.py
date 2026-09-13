@@ -16,7 +16,7 @@ def confined_host() -> None:
 
 
 def test_confined_python_starts(confined_host: None) -> None:
-    assert sandbox.run_python("print(2 + 2)") == "4\n"
+    assert sandbox.run_python("print(2 + 2)").output == "4\n"
 
 
 @pytest.mark.parametrize("via_symlink", [False, True])
@@ -46,8 +46,8 @@ def test_outside_file_cannot_be_read(
 
     result = sandbox.run_python(code)
 
-    assert secret not in result
-    assert result == "outside read blocked\n"
+    assert secret not in result.output
+    assert result.output == "outside read blocked\n"
 
 
 def test_tcp_connection_fails(confined_host: None) -> None:
@@ -62,7 +62,7 @@ def test_tcp_connection_fails(confined_host: None) -> None:
         "else:\n"
         "    print('NETWORK ESCAPE')\n"
     )
-    assert result == "network blocked\n"
+    assert result.output == "network blocked\n"
 
 
 def test_working_directory_is_readable_and_writable(confined_host: None) -> None:
@@ -75,7 +75,7 @@ def test_working_directory_is_readable_and_writable(confined_host: None) -> None
         "print(path.read_text())\n"
         "path.unlink(); directory.rmdir()\n"
     )
-    assert result == "local content\n"
+    assert result.output == "local content\n"
 
 
 @pytest.fixture

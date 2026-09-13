@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -34,7 +35,35 @@ def execution_backend(request: pytest.FixtureRequest, monkeypatch: pytest.Monkey
 
 @pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_run_python_with_real_resource_limits() -> None:
-    assert sandbox.run_python("print(2 + 2)") == "4\n"
+    result = sandbox.run_python("print(2 + 2)")
+
+    assert result.output == "4\n"
+    assert result.failed is False
+
+
+@pytest.mark.parametrize("code", [None, 123])
+def test_run_python_rejects_non_string_code(code: object) -> None:
+    result = sandbox.run_python(code)  # type: ignore[arg-type]
+
+    assert result.output == "Error: code must be a string."
+    assert result.failed is True
+
+
+def test_run_python_reports_fatal_confinement_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(confine, "fatal_error", lambda: "Confinement unavailable.")
+
+    result = sandbox.run_python("print('must not execute')")
+
+    assert result.output == "Error: Confinement unavailable."
+    assert result.failed is True
+
+
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
+def test_printed_error_prefix_is_not_a_failure() -> None:
+    result = sandbox.run_python("print('Error: something')")
+
+    assert result.output == "Error: something\n"
+    assert result.failed is False
 
 
 def test_missing_confinement_preserves_existing_execution(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -42,7 +71,7 @@ def test_missing_confinement_preserves_existing_execution(monkeypatch: pytest.Mo
         confine, "_availability", lambda: confine.Probe(None, "Docker unavailable", False)
     )
 
-    assert sandbox.run_python("print(2 + 2)") == "4\n"
+    assert sandbox.run_python("print(2 + 2)").output == "4\n"
 
 
 def test_failed_confinement_never_retries_unconfined(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -51,8 +80,9 @@ def test_failed_confinement_never_retries_unconfined(monkeypatch: pytest.MonkeyP
 
     result = sandbox.run_python("print('must not execute')")
 
-    assert result.startswith("Error:")
-    assert "must not execute" not in result
+    assert result.output.startswith("Error:")
+    assert "must not execute" not in result.output
+    assert result.failed is True
 
 
 def test_docker_signal_status_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -64,37 +94,42 @@ def test_docker_signal_status_is_reported(monkeypatch: pytest.MonkeyPatch) -> No
 
     result = sandbox.run_python("pass")
 
-    assert result.startswith("Error: Python was killed by SIGXCPU")
+    assert result.output.startswith("Error: Python was killed by SIGXCPU")
+    assert result.failed is True
 
 
 @pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_prints_and_combines_stdout_and_stderr():
     result = sandbox.run_python("import sys; print('hello'); print('problem', file=sys.stderr)")
 
-    assert result == "hello\nproblem\n"
+    assert result.output == "hello\nproblem\n"
 
 
 @pytest.mark.parametrize("code", ["raise RuntimeError('boom')", "raise SystemExit(7)"])
 @pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
-def test_nonzero_exit_is_text(code):
+def test_nonzero_exit_is_text(code: str) -> None:
     result = sandbox.run_python(code)
 
-    assert result.startswith("Error: Python exited with code")
+    assert result.output.startswith("Error: Python exited with code")
+    assert result.failed is True
     if "RuntimeError" in code:
-        assert "RuntimeError: boom" in result
+        assert "RuntimeError: boom" in result.output
 
 
 @pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
-def test_infinite_loop_times_out(monkeypatch, execution_backend):
+def test_infinite_loop_times_out(
+    monkeypatch: pytest.MonkeyPatch, execution_backend: str,
+) -> None:
     timeout = 2 if execution_backend == "docker" else 0.3
     monkeypatch.setattr(sandbox, "WALL_TIMEOUT_SECONDS", timeout)
     started = time.monotonic()
 
     result = sandbox.run_python("print('before loop')\nwhile True: pass")
 
-    assert result.startswith("Error:")
-    assert "timed out" in result
-    assert "before loop" in result
+    assert result.output.startswith("Error:")
+    assert "timed out" in result.output
+    assert "before loop" in result.output
+    assert result.failed is True
     assert time.monotonic() - started < timeout + confine.DOCKER_TIMEOUT_SECONDS + 1
 
 
@@ -102,8 +137,8 @@ def test_infinite_loop_times_out(monkeypatch, execution_backend):
 def test_output_is_capped():
     result = sandbox.run_python(f"print('x' * {sandbox.MAX_OUTPUT_CHARS * 1000})")
 
-    assert len(result) == sandbox.MAX_OUTPUT_CHARS
-    assert result.endswith("[output truncated]")
+    assert len(result.output) == sandbox.MAX_OUTPUT_CHARS
+    assert result.output.endswith("[output truncated]")
 
 
 @pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
@@ -112,9 +147,9 @@ def test_error_note_survives_output_truncation():
         f"print('x' * {sandbox.MAX_OUTPUT_CHARS * 10}); raise SystemExit(9)"
     )
 
-    assert len(result) == sandbox.MAX_OUTPUT_CHARS
-    assert result.startswith("Error: Python exited with code 9.")
-    assert "[output truncated]" in result
+    assert len(result.output) == sandbox.MAX_OUTPUT_CHARS
+    assert result.output.startswith("Error: Python exited with code 9.")
+    assert "[output truncated]" in result.output
 
 
 @pytest.mark.parametrize("name", ["ANTHROPIC_API_KEY", "SUPABASE_SERVICE_KEY", "DATABASE_URL"])
@@ -124,8 +159,8 @@ def test_credentials_are_not_inherited(monkeypatch, name):
 
     result = sandbox.run_python(f"import os; print(os.environ.get({name!r}))")
 
-    assert result == "None\n"
-    assert "secret-must-not-leak" not in result
+    assert result.output == "None\n"
+    assert "secret-must-not-leak" not in result.output
 
 
 @pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
@@ -139,8 +174,8 @@ def test_working_directory_is_temporary_and_removed(monkeypatch, execution_backe
 
     monkeypatch.setattr(confine, "command_prefix", record_directory)
     code = "import os; print(os.getcwd()); open('created.txt', 'w').write('temporary')"
-    first = sandbox.run_python(code).strip()
-    second = sandbox.run_python(code).strip()
+    first = sandbox.run_python(code).output.strip()
+    second = sandbox.run_python(code).output.strip()
     assert first == ("/work" if execution_backend == "docker" else str(directories[0].resolve()))
     assert second == ("/work" if execution_backend == "docker" else str(directories[1].resolve()))
     assert directories[0] != directories[1]
@@ -160,12 +195,12 @@ def test_uses_current_interpreter_and_isolated_mode(monkeypatch, tmp_path, execu
     )
 
     executable = "/usr/local/bin/python" if execution_backend == "docker" else sys.executable
-    assert result.splitlines() == [executable, "1", "1", "None"]
+    assert result.output.splitlines() == [executable, "1", "1", "None"]
 
 
 @pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_stdin_is_closed():
-    assert sandbox.run_python("import sys; print(repr(sys.stdin.read()))") == "''\n"
+    assert sandbox.run_python("import sys; print(repr(sys.stdin.read()))").output == "''\n"
 
 
 def test_file_size_is_limited():
@@ -178,23 +213,23 @@ def test_file_size_is_limited():
         "print(os.stat('large').st_size)"
     )
 
-    assert result == f"OSError\n{sandbox.FILE_SIZE_LIMIT_BYTES}\n"
+    assert result.output == f"OSError\n{sandbox.FILE_SIZE_LIMIT_BYTES}\n"
 
 
 @pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
 def test_limit_signal_is_reported():
     result = sandbox.run_python("import os, signal; os.kill(os.getpid(), signal.SIGXCPU)")
 
-    assert result.startswith("Error: Python was killed by SIGXCPU")
-    assert "resource limit" in result
+    assert result.output.startswith("Error: Python was killed by SIGXCPU")
+    assert "resource limit" in result.output
 
 
 def test_cpu_limit_is_enforced():
     result = sandbox.run_python("while True: pass")
 
-    assert "killed by SIG" in result
-    assert "resource limit" in result
-    assert "timed out" not in result
+    assert "killed by SIG" in result.output
+    assert "resource limit" in result.output
+    assert "timed out" not in result.output
 
 
 def test_memory_limit_is_enforced() -> None:
@@ -222,8 +257,8 @@ def test_memory_limit_is_enforced() -> None:
 
     result = sandbox.run_python(f"data = bytearray({sandbox.MEMORY_LIMIT_BYTES * 2})")
 
-    assert result.startswith("Error:")
-    assert "MemoryError" in result
+    assert result.output.startswith("Error:")
+    assert "MemoryError" in result.output
 
 
 @pytest.mark.parametrize("close_output", [False, True])
@@ -251,8 +286,8 @@ def test_timeout_kills_grandchild(monkeypatch, close_output):
     grandchild = None
     try:
         result = sandbox.run_python(code)
-        grandchild = int(result.splitlines()[-1])
-        assert "timed out" in result
+        grandchild = int(result.output.splitlines()[-1])
+        assert "timed out" in result.output
         os.close(writer)
         writer = -1
         os.set_blocking(reader, False)
@@ -325,17 +360,31 @@ def test_fails_closed_when_mandatory_limits_cannot_be_applied(
 
     result = sandbox.run_python("print('must not execute')")
 
-    assert result.startswith("Error: Could not run Python with required resource limits:")
-    assert "must not execute" not in result
+    assert result.output.startswith("Error: Could not run Python with required resource limits:")
+    assert "must not execute" not in result.output
+    assert result.failed is True
 
 
 @pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
-def test_run_tool_dispatches(memory_store):
+def test_run_tool_dispatches(memory_store: Mock) -> None:
     assert tools.run_tool("run_python", {"code": "print(6 * 7)"}, memory_store) == (
         tools.ToolOutcome(output="42\n", failed=False)
     )
     assert tools.RUN_PYTHON_TOOL in tools.available_tools()
     assert tools.RUN_PYTHON_TOOL["input_schema"]["required"] == ["code"]
+
+
+@pytest.mark.parametrize("execution_backend", ["host", "docker"], indirect=True)
+def test_run_tool_dispatches_python_failure(memory_store: Mock) -> None:
+    result = tools.run_tool("run_python", {"code": "import sys; sys.exit(3)"}, memory_store)
+
+    assert result == tools.ToolOutcome(output="Error: Python exited with code 3.\n", failed=True)
+
+
+def test_run_tool_preserves_success_for_printed_error_prefix(memory_store: Mock) -> None:
+    result = tools.run_tool("run_python", {"code": "print('Error: something')"}, memory_store)
+
+    assert result == tools.ToolOutcome(output="Error: something\n", failed=False)
 
 
 @pytest.mark.parametrize("tool_input", [{}, {"code": None}, {"code": 123}])
@@ -386,7 +435,20 @@ def test_container_client_has_no_posix_limits_and_is_cleaned_up(monkeypatch, tim
 
     result = sandbox.run_python(code)
 
-    assert "started" in result
-    assert ("timed out" in result) == times_out
+    assert "started" in result.output
+    assert ("timed out" in result.output) == times_out
     assert cleaned_up == directories
     assert len(cleaned_up) == 1
+    assert result.failed is times_out
+
+
+def test_container_removal_failure_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        confine, "command_prefix", lambda directory: [sys.executable, "-I", "-u", "-c"]
+    )
+    monkeypatch.setattr(confine, "remove_container", lambda directory: "Container removal failed.")
+
+    result = sandbox.run_python("print('finished')")
+
+    assert result.output == "Error: Container removal failed.\nfinished\n"
+    assert result.failed is True
