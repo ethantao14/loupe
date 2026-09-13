@@ -91,6 +91,11 @@ def test_fetch_steps_batches_ids_and_paginates_in_order() -> None:
             {"kind": "tool_result", "tool_name": "fetch_url", "detail": "Output"},
             {"kind": "answer", "tool_name": None, "detail": "Hello!"},
         ],
+        [
+            {"kind": "tool_call", "tool_name": "fetch_url", "detail": "Input"},
+            {"kind": "tool_error", "tool_name": "fetch_url", "detail": "Error: Could not fetch"},
+            {"kind": "answer", "tool_name": None, "detail": "Could not fetch the page."},
+        ],
     ],
 )
 def test_insert_exchange_with_steps_uses_one_rpc(steps: list[dict]) -> None:

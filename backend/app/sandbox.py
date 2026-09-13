@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 
 from app import confine
 
@@ -36,6 +37,14 @@ LINUX_SIGNALS = {
     13: "SIGPIPE", 14: "SIGALRM", 15: "SIGTERM", 24: "SIGXCPU", 25: "SIGXFSZ",
 }
 LINUX_SIGNAL_LIMIT = 65
+
+
+@dataclass(frozen=True)
+class SandboxResult:
+    """What Python produced, and whether execution failed."""
+
+    output: str
+    failed: bool
 
 
 def _linux_signal_name(number: int) -> str:
@@ -69,13 +78,13 @@ def _format_output(output: bytearray, note: str) -> str:
     return (prefix + text)[:MAX_OUTPUT_CHARS]
 
 
-def run_python(code: str) -> str:
+def run_python(code: str) -> SandboxResult:
     if not isinstance(code, str):
-        return "Error: code must be a string."
+        return SandboxResult("Error: code must be a string.", failed=True)
 
     blocking = confine.fatal_error()
     if blocking:
-        return f"Error: {blocking}"
+        return SandboxResult(f"Error: {blocking}", failed=True)
 
     output = bytearray()
     note = ""
@@ -151,4 +160,4 @@ def run_python(code: str) -> str:
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         note = f"Could not run Python with required resource limits: {error}"
 
-    return _format_output(output, note)
+    return SandboxResult(_format_output(output, note), failed=bool(note))

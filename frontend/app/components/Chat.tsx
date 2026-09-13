@@ -16,6 +16,7 @@ const stepStyles = {
   thinking: { label: "Thinking", badge: "bg-violet-400/10 text-violet-300" },
   tool_call: { label: "Tool call", badge: "bg-sky-400/10 text-sky-300" },
   tool_result: { label: "Tool result", badge: "bg-amber-400/10 text-amber-300" },
+  tool_error: { label: "Tool error", badge: "bg-red-400/10 text-red-300" },
   answer: { label: "Answer", badge: "bg-emerald-400/10 text-emerald-300" },
   memory: { label: "Memory", badge: "bg-rose-400/10 text-rose-300" },
 };

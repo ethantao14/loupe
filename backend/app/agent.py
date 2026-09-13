@@ -15,6 +15,9 @@ SYSTEM_PROMPT = (
 MAX_ITERATIONS = 5
 OUT_OF_STEPS_REPLY = "I couldn't finish that within my tool-use limit. Try narrowing the question."
 MAX_DETAIL_CHARS = 2000
+RECOVERY_HINT = (
+    "Fix the tool input or try a different approach. Do not repeat the same call unchanged."
+)
 
 
 @dataclass
@@ -106,17 +109,25 @@ def run_turn(
                         detail=_shorten(detail),
                     )
                 )
-                output = tools.run_tool(block.name, block.input, memory_store)
+                outcome = tools.run_tool(block.name, block.input, memory_store)
                 steps.append(
-                    Step(kind="tool_result", tool_name=block.name, detail=_shorten(output))
+                    Step(
+                        kind="tool_error" if outcome.failed else "tool_result",
+                        tool_name=block.name,
+                        detail=_shorten(outcome.output),
+                    )
                 )
-                results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": output,
-                    }
-                )
+                tool_result: ToolResultBlockParam = {
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": outcome.output,
+                }
+                if outcome.failed:
+                    # The hint goes to the model only. The step keeps the raw
+                    # error so the trace shows what actually failed.
+                    tool_result["content"] = f"{outcome.output}\n\n{RECOVERY_HINT}"
+                    tool_result["is_error"] = True
+                results.append(tool_result)
 
         if is_final:
             return TurnResult(reply=reply or "", steps=steps)
