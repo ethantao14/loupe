@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import {
+  deleteConversation,
   deleteMemory,
   fetchConversations,
   fetchMemories,
   fetchMessages,
+  renameConversation,
   sendMessage,
   type Conversation,
   type Memory,
@@ -223,6 +225,13 @@ export default function Chat() {
   const [memoryVersion, setMemoryVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [conversationError, setConversationError] = useState<string | null>(null);
+  const [conversationAction, setConversationAction] = useState<{
+    id: string;
+    kind: "rename" | "delete";
+  } | null>(null);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [isUpdatingConversation, setIsUpdatingConversation] = useState(false);
+  const sidebarDisabled = isSending || isUpdatingConversation;
   const loadSequence = useRef(0);
   const conversationSequence = useRef(0);
 
@@ -274,10 +283,53 @@ export default function Chat() {
     }
   }
 
+  async function saveConversationTitle(conversation: Conversation) {
+    if (sidebarDisabled) return;
+    const title = titleDraft.trim().replace(/\s+/g, " ");
+    if (!title || title === (conversation.title ?? "New conversation")) {
+      setConversationAction(null);
+      return;
+    }
+    setIsUpdatingConversation(true);
+    setConversationError(null);
+    try {
+      const updated = await renameConversation(conversation.id, title);
+      setConversations((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setConversationAction(null);
+    } catch {
+      setConversationError(
+        `Could not rename "${conversation.title ?? "New conversation"}". Please try again.`,
+      );
+    } finally {
+      setIsUpdatingConversation(false);
+    }
+  }
+
+  async function removeConversation(conversation: Conversation) {
+    if (sidebarDisabled) return;
+    setIsUpdatingConversation(true);
+    setConversationError(null);
+    try {
+      await deleteConversation(conversation.id);
+      const remaining = conversations.filter((item) => item.id !== conversation.id);
+      setConversations(remaining);
+      setConversationAction(null);
+      if (conversation.id === conversationId) {
+        void selectConversation(remaining[0]?.id);
+      }
+    } catch {
+      setConversationError(
+        `Could not delete "${conversation.title ?? "New conversation"}". Please try again.`,
+      );
+    } finally {
+      setIsUpdatingConversation(false);
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     const content = draft.trim();
-    if (!content || isSending || isLoading) return;
+    if (!content || sidebarDisabled || isLoading) return;
 
     setDraft("");
     setIsSending(true);
@@ -313,26 +365,127 @@ export default function Chat() {
         <button
           type="button"
           onClick={() => void selectConversation()}
-          disabled={isSending}
+          disabled={sidebarDisabled}
           className="mb-4 rounded-md border border-neutral-700 px-3 py-2 text-left text-sm hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50"
         >
           New chat
         </button>
         <nav aria-label="Conversations" className="min-h-0 space-y-1 overflow-y-auto">
-          {conversations.map((conversation) => (
-            <button
-              key={conversation.id}
-              type="button"
-              aria-current={conversation.id === conversationId ? "page" : undefined}
-              disabled={isSending}
-              onClick={() => void selectConversation(conversation.id)}
-              className={`block w-full truncate rounded-md px-3 py-2 text-left text-sm hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50 ${
-                conversation.id === conversationId ? "bg-neutral-800 text-white" : "text-neutral-400"
-              }`}
-            >
-              {conversation.title ?? "New conversation"}
-            </button>
-          ))}
+          {conversations.map((conversation) => {
+            const title = conversation.title ?? "New conversation";
+            const action = conversationAction?.id === conversation.id ? conversationAction.kind : null;
+            const actionClass = "rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50";
+            return (
+              <div key={conversation.id} className="rounded-md border border-neutral-800 p-1">
+                <button
+                  type="button"
+                  aria-current={conversation.id === conversationId ? "page" : undefined}
+                  disabled={sidebarDisabled}
+                  onClick={() => void selectConversation(conversation.id)}
+                  className={`block w-full truncate rounded-md px-3 py-2 text-left text-sm hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50 ${
+                    conversation.id === conversationId ? "bg-neutral-800 text-white" : "text-neutral-400"
+                  }`}
+                >
+                  {title}
+                </button>
+                {action === "rename" ? (
+                  <form
+                    className="space-y-1"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveConversationTitle(conversation);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape" && !sidebarDisabled) setConversationAction(null);
+                    }}
+                  >
+                    <input
+                      aria-label={`Title for conversation: ${title}`}
+                      autoFocus
+                      value={titleDraft}
+                      maxLength={200}
+                      disabled={sidebarDisabled}
+                      onChange={(event) => setTitleDraft(event.target.value)}
+                      className="w-full min-w-0 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50"
+                    />
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="submit"
+                        aria-label={`Save title for conversation: ${title}`}
+                        disabled={sidebarDisabled}
+                        className={actionClass}
+                      >
+                        {isUpdatingConversation ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Cancel rename conversation: ${title}`}
+                        disabled={sidebarDisabled}
+                        onClick={() => setConversationAction(null)}
+                        className={actionClass}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : action === "delete" ? (
+                  <div className="space-y-1">
+                    <p className="break-words px-2 text-xs text-neutral-300">
+                      Permanently delete &quot;{title}&quot; and all its messages? This cannot be undone.
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        aria-label={`Confirm permanently delete conversation and all its messages: ${title}`}
+                        disabled={sidebarDisabled}
+                        onClick={() => void removeConversation(conversation)}
+                        className={actionClass}
+                      >
+                        {isUpdatingConversation ? "Deleting..." : "Confirm"}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Cancel delete conversation: ${title}`}
+                        disabled={sidebarDisabled}
+                        onClick={() => setConversationAction(null)}
+                        className={actionClass}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      aria-label={`Rename conversation: ${title}`}
+                      disabled={sidebarDisabled}
+                      onClick={() => {
+                        setConversationError(null);
+                        setTitleDraft(title);
+                        setConversationAction({ id: conversation.id, kind: "rename" });
+                      }}
+                      className={actionClass}
+                    >
+                      Rename
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Delete conversation: ${title}`}
+                      disabled={sidebarDisabled}
+                      onClick={() => {
+                        setConversationError(null);
+                        setConversationAction({ id: conversation.id, kind: "delete" });
+                      }}
+                      className={actionClass}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
         {conversationError ? <p role="alert" className="mt-3 text-sm text-red-400">{conversationError}</p> : null}
       </aside>
@@ -373,7 +526,7 @@ export default function Chat() {
             />
             <button
               type="submit"
-              disabled={isSending || isLoading}
+              disabled={sidebarDisabled || isLoading}
               className="rounded-md bg-neutral-100 px-4 py-2 font-medium text-neutral-900 disabled:opacity-50"
             >
               Send

@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { deleteMemory, fetchConversations, fetchMemories, fetchMessages, sendMessage } from "./api";
+import {
+  deleteConversation,
+  deleteMemory,
+  fetchConversations,
+  fetchMemories,
+  fetchMessages,
+  renameConversation,
+  sendMessage,
+} from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -72,5 +80,46 @@ describe("conversation API", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(id ? { content: "Hello", conversation_id: id } : { content: "Hello" }),
     });
+  });
+});
+
+describe("conversation mutation API", () => {
+  it("renames a conversation and encodes its id", async () => {
+    const conversation = { id: "chat /1", title: "New title", created_at: "2026-01-01T00:00:00Z" };
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(conversation));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await renameConversation("chat /1", "New title")).toEqual(conversation);
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      expect.stringMatching(/\/api\/conversations\/chat%20%2F1$/),
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "New title" }),
+      },
+    );
+  });
+
+  it("deletes with an encoded id and accepts an empty 204 response", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteConversation("chat /1")).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      expect.stringMatching(/\/api\/conversations\/chat%20%2F1$/), { method: "DELETE" },
+    );
+  });
+
+  it.each([404, 422, 500])("rejects failed renames with status %s", async (status) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status })));
+
+    await expect(renameConversation("chat-1", "New title"))
+      .rejects.toThrow(`Request failed with status ${status}`);
+  });
+
+  it.each([404, 500])("rejects failed deletes with status %s", async (status) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status })));
+
+    await expect(deleteConversation("chat-1")).rejects.toThrow(`Request failed with status ${status}`);
   });
 });

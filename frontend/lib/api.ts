@@ -39,6 +39,24 @@ export async function fetchConversations(): Promise<Conversation[]> {
   return (await parseOrThrow(response)) as Conversation[];
 }
 
+export async function renameConversation(conversationId: string, title: string): Promise<Conversation> {
+  const response = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(conversationId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  return (await parseOrThrow(response)) as Conversation;
+}
+
+export async function deleteConversation(conversationId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(conversationId)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
+  }
+}
+
 export async function fetchMessages(conversationId?: string): Promise<Message[]> {
   const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : "";
   const response = await fetch(`${API_BASE}/api/messages${query}`);

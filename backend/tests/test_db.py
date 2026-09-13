@@ -242,3 +242,35 @@ def test_conversation_exists(exists: bool) -> None:
     query.select.assert_called_once_with("id")
     query.eq.assert_called_once_with("id", "chat-id")
     query.limit.assert_called_once_with(1)
+
+
+@pytest.mark.parametrize("exists", [False, True])
+def test_rename_conversation(exists: bool) -> None:
+    client = Mock(spec=Client)
+    query = client.table.return_value
+    query.update.return_value = query
+    query.eq.return_value = query
+    row = {"id": "chat-id", "title": "New title", "created_at": "2026-01-01T00:00:00Z"}
+    query.execute.return_value = SimpleNamespace(data=[row] if exists else [])
+
+    assert db.rename_conversation(client, "chat-id", "New title") == (row if exists else None)
+    client.table.assert_called_once_with("conversations")
+    query.update.assert_called_once_with({"title": "New title"})
+    query.eq.assert_called_once_with("id", "chat-id")
+    query.execute.assert_called_once_with()
+
+
+@pytest.mark.parametrize("exists", [False, True])
+def test_delete_conversation(exists: bool) -> None:
+    client = Mock(spec=Client)
+    query = client.table.return_value
+    query.delete.return_value = query
+    query.eq.return_value = query
+    query.execute.return_value = SimpleNamespace(data=[{"id": "chat-id"}] if exists else [])
+
+    assert db.delete_conversation(client, "chat-id") is exists
+    client.table.assert_called_once_with("conversations")
+    query.delete.assert_called_once_with()
+    query.eq.assert_called_once_with("id", "chat-id")
+    query.execute.assert_called_once_with()
+
