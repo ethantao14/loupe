@@ -1,3 +1,4 @@
+import json
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
@@ -18,6 +19,10 @@ OUT_OF_STEPS_REPLY = "I couldn't finish that within my tool-use limit. Try narro
 MAX_DETAIL_CHARS = 2000
 RECOVERY_HINT = (
     "Fix the tool input or try a different approach. Do not repeat the same call unchanged."
+)
+REPEATED_CALL_NOTICE = (
+    "This exact call already failed in this turn and was not run again. "
+    "Change the input or try something else."
 )
 
 
@@ -84,6 +89,7 @@ def stream_turn(
     """Run one assistant turn, emitting text and each recorded step."""
     messages: list[MessageParam] = [{"role": m["role"], "content": m["content"]} for m in history]
     steps: list[Step] = []
+    failed_calls: dict[tuple[str, str], str] = {}
     query = history[-1].get("content") if history else None
     recall = memory_store.recall_relevant(query if isinstance(query, str) else None, RECALL_TOP_K)
     facts = [fact for fact, _ in recall.selected]
@@ -136,6 +142,22 @@ def stream_turn(
                     )
                 )
                 yield StepEvent(steps[-1])
+                call_key = (block.name, json.dumps(block.input, sort_keys=True, default=str))
+                if call_key in failed_calls:
+                    notice = (
+                        f'{REPEATED_CALL_NOTICE}\n\nOriginal error:\n"{failed_calls[call_key]}"'
+                    )
+                    steps.append(
+                        Step(kind="tool_repeat", tool_name=block.name, detail=_shorten(notice))
+                    )
+                    yield StepEvent(steps[-1])
+                    results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": notice,
+                        "is_error": True,
+                    })
+                    continue
                 outcome = tools.run_tool(block.name, block.input, memory_store)
                 steps.append(
                     Step(
@@ -151,6 +173,7 @@ def stream_turn(
                     "content": outcome.output,
                 }
                 if outcome.failed:
+                    failed_calls[call_key] = outcome.output
                     # The hint goes to the model only. The step keeps the raw
                     # error so the trace shows what actually failed.
                     tool_result["content"] = f"{outcome.output}\n\n{RECOVERY_HINT}"

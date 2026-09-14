@@ -222,6 +222,24 @@ describe("Chat", () => {
     );
   });
 
+  it("renders a repeated tool call with an orange warning badge", async () => {
+    fetchMessages.mockResolvedValue([message("1", "assistant", "Trying something else", [{
+      id: "repeat-1", kind: "tool_repeat", tool_name: "fetch_url",
+      detail: "This exact call already failed. Original error: Could not fetch",
+    }])]);
+
+    render(<Chat />);
+    await userEvent.click(await screen.findByRole("button", { name: "Show reasoning (1 step)" }));
+
+    const badge = screen.getByText("Repeated call");
+    expect(badge).toBeVisible();
+    expect(badge).toHaveClass("bg-orange-400/10", "text-orange-300");
+    expect(screen.getByText("fetch_url")).toBeVisible();
+    expect(screen.getByLabelText("Step 1: Repeated call detail")).toHaveTextContent(
+      "This exact call already failed. Original error: Could not fetch",
+    );
+  });
+
   it.each(["future_kind", "toString", "__proto__"])(
     "renders an unknown step kind safely: %s", async (kind) => {
       const unknownStep = {

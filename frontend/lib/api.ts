@@ -1,6 +1,6 @@
 export type Step = {
   id: string;
-  kind: "thinking" | "tool_call" | "tool_result" | "tool_error" | "answer" | "memory";
+  kind: "thinking" | "tool_call" | "tool_result" | "tool_error" | "tool_repeat" | "answer" | "memory";
   tool_name: string | null;
   detail: string;
 };
@@ -108,7 +108,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isStreamStep(value: unknown): value is StreamStep {
   return isRecord(value)
     && typeof value.kind === "string"
-    && ["thinking", "tool_call", "tool_result", "tool_error", "answer", "memory"].includes(value.kind)
+    && ["thinking", "tool_call", "tool_result", "tool_error", "tool_repeat", "answer", "memory"].includes(value.kind)
     && (value.tool_name === null || typeof value.tool_name === "string")
     && typeof value.detail === "string";
 }

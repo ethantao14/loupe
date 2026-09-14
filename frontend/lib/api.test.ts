@@ -189,6 +189,24 @@ describe("message streaming API", () => {
     },
   );
 
+  it("accepts repeated calls in live steps and the persisted result", async () => {
+    const repeat = {
+      kind: "tool_repeat" as const, tool_name: "fetch_url", detail: "This exact call already failed.",
+    };
+    const completed: SendResult = {
+      ...result,
+      reply: { ...result.reply, steps: [{ id: "repeat-1", ...repeat }] },
+    };
+    respond([new TextEncoder().encode(frame("step", repeat) + frame("done", completed))]);
+    const callbacks = handlers();
+
+    await streamMessage("Hi", "chat-1", callbacks);
+
+    expect(callbacks.onStep).toHaveBeenCalledExactlyOnceWith(repeat);
+    expect(callbacks.onDone).toHaveBeenCalledExactlyOnceWith(completed);
+    expect(callbacks.onError).not.toHaveBeenCalled();
+  });
+
   it("delivers a delta before the response closes", async () => {
     let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
     const body = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
