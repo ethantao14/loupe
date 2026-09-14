@@ -2,6 +2,7 @@ from copy import deepcopy
 from unittest.mock import Mock
 
 import pytest
+from stream_helpers import FakeMessageStream
 from supabase import Client
 
 from app import agent, db, tools
@@ -30,6 +31,9 @@ class ScriptedClient:
         self.responses = list(responses)
         self.requests = []
         self.messages = self
+
+    def stream(self, **kwargs: object) -> FakeMessageStream:
+        return FakeMessageStream(self.create(**kwargs))
 
     def create(self, **kwargs):
         self.requests.append(deepcopy(kwargs))

@@ -9,7 +9,7 @@ import {
   fetchMemories,
   fetchMessages,
   renameConversation,
-  sendMessage,
+  streamMessage,
   type Conversation,
   type Memory,
   type Message,
@@ -219,6 +219,7 @@ export default function Chat() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [provisional, setProvisional] = useState<Message | null>(null);
   const [draft, setDraft] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
@@ -334,15 +335,33 @@ export default function Chat() {
     setDraft("");
     setIsSending(true);
     setError(null);
+    setProvisional({
+      id: "streaming-reply", role: "assistant", content: "", created_at: "", steps: [],
+    });
     try {
-      const { conversation_id: savedId, user, reply } = await sendMessage(content, conversationId);
-      setConversationId(savedId);
-      setMessages((current) => [...current, user, reply]);
-      ++conversationSequence.current;
-      setConversations((current) => current.some((item) => item.id === savedId) ? current : [
-        { id: savedId, title: null, created_at: user.created_at },
-        ...current,
-      ]);
+      await streamMessage(content, conversationId, {
+        onDelta: (text) => setProvisional((current) => current ? {
+          ...current, content: current.content + text,
+        } : null),
+        onStep: (step) => setProvisional((current) => current ? {
+          ...current,
+          // Text before a tool call is interim and is kept as a thinking step,
+          // so clear it rather than leaving it to vanish when done arrives.
+          content: step.kind === "tool_call" ? "" : current.content,
+          steps: [...current.steps, { ...step, id: `streaming-step-${current.steps.length}` }],
+        } : null),
+        onDone: ({ conversation_id: savedId, user, reply }) => {
+          setConversationId(savedId);
+          setProvisional(null);
+          setMessages((current) => [...current, user, reply]);
+          ++conversationSequence.current;
+          setConversations((current) => current.some((item) => item.id === savedId) ? current : [
+            { id: savedId, title: null, created_at: user.created_at },
+            ...current,
+          ]);
+        },
+        onError: (detail) => { throw new Error(detail); },
+      });
       setConversationError(null);
       try {
         setConversations(await fetchConversations());
@@ -350,6 +369,7 @@ export default function Chat() {
         setConversationError("Could not refresh conversations.");
       }
     } catch {
+      setProvisional(null);
       setError("Could not send that message.");
       setDraft(content);
     } finally {
@@ -497,21 +517,23 @@ export default function Chat() {
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-6 sm:px-6 [overflow-wrap:anywhere]">
           <MemoryPanel refreshToken={memoryVersion} />
           {isLoading ? <p className="text-neutral-500">Loading conversation...</p> : null}
-          {messages.length === 0 && !error && !isLoading ? (
+          {messages.length === 0 && !provisional && !error && !isLoading ? (
             <p className="text-neutral-500">Start the conversation below.</p>
           ) : null}
-          {messages.map((message) => (
+          {[...messages, ...(provisional ? [provisional] : [])].map((message) => (
             <div key={message.id} className="max-w-2xl">
               <p className="mb-1 text-xs uppercase tracking-wide text-neutral-500">
                 {message.role}
               </p>
               <p className="whitespace-pre-wrap">{message.content}</p>
+              {message === provisional && !message.content && message.steps.length === 0 ? (
+                <p role="status" className="text-neutral-500">Thinking...</p>
+              ) : null}
               {message.role === "assistant" && message.steps.length > 0 ? (
                 <StepTrace steps={message.steps} />
               ) : null}
             </div>
           ))}
-          {isSending ? <p className="text-neutral-500">Thinking...</p> : null}
           {error ? <p className="text-red-400">{error}</p> : null}
         </div>
 

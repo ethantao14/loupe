@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from stream_helpers import FakeMessageStream
 
 from app import agent, db
 from app.main import app, get_claude_client, get_db_client
@@ -108,6 +109,10 @@ class FakeClaudeResponse:
 class FakeClaudeClient:
     class messages:
         @staticmethod
+        def stream(**kwargs: object) -> FakeMessageStream:
+            return FakeMessageStream(FakeClaudeClient.messages.create(**kwargs))
+
+        @staticmethod
         def create(**kwargs):
             return FakeClaudeResponse("Hi there!")
 
@@ -172,7 +177,9 @@ def test_remembers_fact_and_recalls_it_in_later_conversation(monkeypatch):
         requests.append(kwargs)
         return responses.pop(0)
 
-    llm_client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    llm_client = SimpleNamespace(messages=SimpleNamespace(
+        create=create, stream=lambda **kwargs: FakeMessageStream(create(**kwargs)),
+    ))
     app.dependency_overrides[get_claude_client] = lambda: llm_client
 
     first = client.post("/api/messages", json={"content": "I prefer Python."})
