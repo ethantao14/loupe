@@ -322,7 +322,7 @@ def test_remember_tool_receives_store_and_reports_success(memory_store):
 @pytest.mark.parametrize("enabled", [False, True])
 def test_python_trace_describes_confinement_only_when_enabled(monkeypatch, memory_store, enabled):
     monkeypatch.setattr(tools.config, "ENABLE_CODE_EXECUTION", enabled)
-    monkeypatch.setattr(agent.confine, "unavailable_reason", lambda: "daemon stopped")
+    monkeypatch.setattr(agent.confine, "daemon_unavailable_reason", lambda: "daemon stopped")
     description = Mock(
         return_value="Docker unavailable: daemon stopped; code execution is not offered"
     )

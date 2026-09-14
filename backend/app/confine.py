@@ -29,7 +29,7 @@ class Probe(NamedTuple):
 
 
 @cache
-def _availability() -> Probe:
+def _daemon() -> Probe:
     launcher = shutil.which("docker")
     if launcher is None:
         return Probe(None, "Docker binary not found on PATH")
@@ -47,11 +47,19 @@ def _availability() -> Probe:
     if result.returncode:
         detail = result.stderr.strip() or f"exit code {result.returncode}"
         return Probe(None, f"Docker daemon unavailable: {detail}")
+    return Probe(launcher, None)
 
-    missing = _ensure_image(launcher)
+
+@cache
+def _availability() -> Probe:
+    """The daemon check plus the image, which a first pull can make slow."""
+    probe = _daemon()
+    if probe.launcher is None:
+        return probe
+    missing = _ensure_image(probe.launcher)
     if missing:
         return Probe(None, missing)
-    return Probe(launcher, None)
+    return probe
 
 
 def _ensure_image(launcher: str) -> str | None:
@@ -82,8 +90,16 @@ def _ensure_image(launcher: str) -> str | None:
     return None
 
 
+def daemon_unavailable_reason() -> str | None:
+    """Whether Docker itself is usable, without preparing the image.
+
+    Tool discovery runs on every turn, so it must not wait on an image pull.
+    """
+    return _daemon().reason
+
+
 def unavailable_reason() -> str | None:
-    """Return the cached binary/daemon check, including a bounded probe timeout."""
+    """Whether code can actually run, so also that the image is prepared."""
     return _availability().reason
 
 

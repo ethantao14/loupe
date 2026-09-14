@@ -73,8 +73,8 @@ REMEMBER_TOOL: ToolParam = {
 
 
 def available_tools() -> list[ToolParam]:
-    """Code execution requires both an enabled flag and available confinement."""
-    if config.ENABLE_CODE_EXECUTION and confine.unavailable_reason() is None:
+    """Code execution requires both an enabled flag and a usable Docker daemon."""
+    if config.ENABLE_CODE_EXECUTION and confine.daemon_unavailable_reason() is None:
         return [FETCH_URL_TOOL, RUN_PYTHON_TOOL, REMEMBER_TOOL]
     return [FETCH_URL_TOOL, REMEMBER_TOOL]
 

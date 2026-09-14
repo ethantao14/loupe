@@ -80,9 +80,25 @@ def test_working_directory_is_readable_and_writable(confined_host: None) -> None
 
 @pytest.fixture
 def fresh_probe() -> Iterator[None]:
+    confine._daemon.cache_clear()
     confine._availability.cache_clear()
     yield
+    confine._daemon.cache_clear()
     confine._availability.cache_clear()
+
+
+def test_tool_discovery_does_not_prepare_the_image(
+    monkeypatch: pytest.MonkeyPatch, fresh_probe: None,
+) -> None:
+    """A cold image pull must not land on the first chat message."""
+    monkeypatch.setattr(confine.shutil, "which", Mock(return_value="/usr/bin/docker"))
+    probe = Mock(return_value=subprocess.CompletedProcess([], 0, stdout="28.0", stderr=""))
+    monkeypatch.setattr(confine.subprocess, "run", probe)
+
+    assert confine.daemon_unavailable_reason() is None
+
+    assert probe.call_count == 1
+    assert probe.call_args.args[0] == ["/usr/bin/docker", "info", "--format", "{{.ServerVersion}}"]
 
 
 def test_missing_docker_is_reported_and_cached(

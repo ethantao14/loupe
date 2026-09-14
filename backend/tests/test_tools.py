@@ -313,7 +313,7 @@ def test_remember_returns_helpful_storage_error(memory_store):
 
 @pytest.mark.parametrize("enabled", [False, True])
 def test_remember_is_always_offered(monkeypatch, enabled):
-    monkeypatch.setattr(confine, "unavailable_reason", lambda: None)
+    monkeypatch.setattr(confine, "daemon_unavailable_reason", lambda: None)
     monkeypatch.setattr(tools.config, "ENABLE_CODE_EXECUTION", enabled)
 
     assert tools.REMEMBER_TOOL in tools.available_tools()
@@ -326,7 +326,7 @@ def test_remember_is_always_offered(monkeypatch, enabled):
 @pytest.mark.parametrize("reason", [None, "Docker daemon unavailable"])
 def test_python_requires_enabled_flag_and_docker(monkeypatch, enabled, reason):
     monkeypatch.setattr(tools.config, "ENABLE_CODE_EXECUTION", enabled)
-    monkeypatch.setattr(confine, "unavailable_reason", lambda: reason)
+    monkeypatch.setattr(confine, "daemon_unavailable_reason", lambda: reason)
 
     offered = tools.available_tools()
 
