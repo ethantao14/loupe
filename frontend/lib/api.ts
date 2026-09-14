@@ -91,3 +91,119 @@ export async function sendMessage(content: string, conversationId?: string): Pro
   });
   return (await parseOrThrow(response)) as SendResult;
 }
+
+export type StreamStep = Omit<Step, "id">;
+
+export type StreamHandlers = {
+  onDelta: (text: string) => void;
+  onStep: (step: StreamStep) => void;
+  onDone: (result: SendResult) => void;
+  onError: (detail: string) => void;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isStreamStep(value: unknown): value is StreamStep {
+  return isRecord(value)
+    && typeof value.kind === "string"
+    && ["thinking", "tool_call", "tool_result", "tool_error", "answer", "memory"].includes(value.kind)
+    && (value.tool_name === null || typeof value.tool_name === "string")
+    && typeof value.detail === "string";
+}
+
+function isMessage(value: unknown): value is Message {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && (value.role === "user" || value.role === "assistant")
+    && typeof value.content === "string"
+    && typeof value.created_at === "string"
+    && Array.isArray(value.steps)
+    && value.steps.every((step: unknown) => isStreamStep(step) && "id" in step
+      && typeof step.id === "string");
+}
+
+function isSendResult(value: unknown): value is SendResult {
+  return isRecord(value)
+    && typeof value.conversation_id === "string"
+    && isMessage(value.user)
+    && isMessage(value.reply);
+}
+
+function dispatchStreamEvent(frame: string, handlers: StreamHandlers): boolean {
+  let name = "";
+  const data: string[] = [];
+  for (const line of frame.split(/\r?\n/)) {
+    if (line.startsWith("event:")) name = line.slice(6).trim();
+    if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+  }
+  if (data.length === 0) return false;
+  const payload: unknown = JSON.parse(data.join("\n"));
+  switch (name) {
+    case "delta":
+      if (isRecord(payload) && typeof payload.text === "string") {
+        handlers.onDelta(payload.text);
+        return false;
+      }
+      break;
+    case "step":
+      if (isStreamStep(payload)) {
+        handlers.onStep(payload);
+        return false;
+      }
+      break;
+    case "done":
+      if (isSendResult(payload)) {
+        handlers.onDone(payload);
+        return true;
+      }
+      break;
+    case "error":
+      if (isRecord(payload) && typeof payload.detail === "string") {
+        handlers.onError(payload.detail);
+        return true;
+      }
+      break;
+    default:
+      return false;
+  }
+  throw new Error(`Invalid ${name} event in message stream.`);
+}
+
+export async function streamMessage(
+  content: string,
+  conversationId: string | undefined,
+  handlers: StreamHandlers,
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/messages/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content, conversation_id: conversationId }),
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
+  }
+  if (!response.body) throw new Error("Message stream has no response body.");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      let boundary = /\r?\n\r?\n/.exec(buffer);
+      while (boundary) {
+        const frame = buffer.slice(0, boundary.index);
+        buffer = buffer.slice(boundary.index + boundary[0].length);
+        if (dispatchStreamEvent(frame, handlers)) return;
+        boundary = /\r?\n\r?\n/.exec(buffer);
+      }
+      if (done) throw new Error("Message stream ended before a done or error event.");
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}

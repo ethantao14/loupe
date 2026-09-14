@@ -1,9 +1,13 @@
+import json
 import os
+from collections.abc import Iterator
+from dataclasses import asdict
 from uuid import UUID
 
 from anthropic import Anthropic
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 from supabase import Client
 
@@ -171,3 +175,52 @@ def send_message(
         "user": user_message,
         "reply": _with_steps([reply], steps)[0],
     }
+
+
+def _sse_event(name: str, payload: dict) -> str:
+    data = json.dumps(payload, separators=(",", ":"))
+    return f"event: {name}\ndata: {data}\n\n"
+
+
+@app.post("/api/messages/stream")
+def stream_message(
+    body: MessageIn,
+    db_client: Client = Depends(get_db_client),
+    llm_client: Anthropic = Depends(get_claude_client),
+) -> StreamingResponse:
+    conversation_id = str(body.conversation_id) if body.conversation_id is not None else None
+    if conversation_id is not None and not db.conversation_exists(db_client, conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    history = db.fetch_messages(db_client, conversation_id) if conversation_id is not None else []
+    pending = [*history, {"role": "user", "content": body.content}]
+
+    def events() -> Iterator[str]:
+        try:
+            for event in agent.stream_turn(llm_client, pending, MemoryStore(db_client)):
+                if isinstance(event, agent.TextDelta):
+                    yield _sse_event("delta", {"text": event.text})
+                elif isinstance(event, agent.StepEvent):
+                    yield _sse_event("step", asdict(event.step))
+                elif isinstance(event, agent.TurnComplete):
+                    saved_id, user, reply, steps = db.insert_exchange_with_steps(
+                        db_client,
+                        conversation_id,
+                        body.content,
+                        event.result.reply,
+                        [asdict(step) for step in event.result.steps],
+                    )
+                    result = SendMessageOut(
+                        conversation_id=saved_id,
+                        user=MessageOut.model_validate(user),
+                        reply=MessageOut.model_validate(_with_steps([reply], steps)[0]),
+                    )
+                    yield _sse_event("done", result.model_dump(mode="json"))
+                    return
+        except Exception as exc:
+            yield _sse_event("error", {"detail": str(exc)})
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

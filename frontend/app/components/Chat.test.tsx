@@ -2,14 +2,14 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Conversation, Memory, Message, Step } from "@/lib/api";
+import type { Conversation, Memory, Message, SendResult, Step, StreamHandlers } from "@/lib/api";
 
 import Chat from "./Chat";
 
 vi.mock("@/lib/api", () => ({
   fetchConversations: vi.fn(),
   fetchMessages: vi.fn(),
-  sendMessage: vi.fn(),
+  streamMessage: vi.fn(),
   fetchMemories: vi.fn(),
   deleteMemory: vi.fn(),
   renameConversation: vi.fn(),
@@ -19,7 +19,8 @@ vi.mock("@/lib/api", () => ({
 const api = await import("@/lib/api");
 const fetchConversations = vi.mocked(api.fetchConversations);
 const fetchMessages = vi.mocked(api.fetchMessages);
-const sendMessage = vi.mocked(api.sendMessage);
+const streamMessage = vi.mocked(api.streamMessage);
+const completedTurn = vi.fn<(content: string, conversationId?: string) => Promise<SendResult>>();
 const fetchMemories = vi.mocked(api.fetchMemories);
 const deleteMemory = vi.mocked(api.deleteMemory);
 const renameConversation = vi.mocked(api.renameConversation);
@@ -54,6 +55,9 @@ const traceSteps: Step[] = [
 describe("Chat", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    streamMessage.mockImplementation(async (content, conversationId, handlers) => {
+      handlers.onDone(await completedTurn(content, conversationId));
+    });
     fetchConversations.mockResolvedValue(conversations);
     fetchMemories.mockResolvedValue(rememberedFacts);
     deleteMemory.mockResolvedValue(undefined);
@@ -235,7 +239,7 @@ describe("Chat", () => {
 
   it("sends a message and shows both turns", async () => {
     fetchMessages.mockResolvedValue([]);
-    sendMessage.mockResolvedValue({
+    completedTurn.mockResolvedValue({
       conversation_id: "chat-2",
       user: message("1", "user", "Hello"),
       reply: message("2", "assistant", "Hi back"),
@@ -245,14 +249,14 @@ describe("Chat", () => {
     await userEvent.type(screen.getByLabelText("Message"), "Hello");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith("Hello", "chat-2"));
+    await waitFor(() => expect(completedTurn).toHaveBeenCalledWith("Hello", "chat-2"));
     expect(await screen.findByText("Hello")).toBeInTheDocument();
     expect(await screen.findByText("Hi back")).toBeInTheDocument();
   });
 
   it("keeps the draft when sending fails", async () => {
     fetchMessages.mockResolvedValue([]);
-    sendMessage.mockRejectedValue(new Error("network"));
+    completedTurn.mockRejectedValue(new Error("network"));
 
     render(<Chat />);
     await userEvent.type(screen.getByLabelText("Message"), "Hello");
@@ -313,7 +317,7 @@ describe("Chat", () => {
 
   it("shows a new reply's trace without refetching history", async () => {
     fetchMessages.mockResolvedValue([]);
-    sendMessage.mockResolvedValue({
+    completedTurn.mockResolvedValue({
       conversation_id: "chat-2",
       user: message("1", "user", "Read the page"),
       reply: message("2", "assistant", "Summary", traceSteps),
@@ -336,7 +340,7 @@ describe("Chat", () => {
     );
     let finishDelete: () => void = () => {};
     deleteMemory.mockReturnValueOnce(new Promise((resolve) => { finishDelete = resolve; }));
-    sendMessage.mockResolvedValue({
+    completedTurn.mockResolvedValue({
       conversation_id: "chat-2",
       user: message("1", "user", "Hello"),
       reply: message("2", "assistant", "Hi back"),
@@ -375,7 +379,7 @@ describe("Chat", () => {
     fetchMemories.mockReturnValueOnce(
       new Promise((resolve) => { finishLoading = resolve; }),
     ).mockResolvedValueOnce([...rememberedFacts, newFact]);
-    sendMessage.mockResolvedValue({
+    completedTurn.mockResolvedValue({
       conversation_id: "chat-2",
       user: message("1", "user", "Remember my dog is a corgi"),
       reply: message("2", "assistant", "Noted."),
@@ -394,7 +398,7 @@ describe("Chat", () => {
     expect(await screen.findByText(newFact.fact)).toBeVisible();
     expect(screen.getByRole("button", { name: "Remembered facts (3)" })).toBeVisible();
     expect(fetchMemories).toHaveBeenCalledTimes(2);
-    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(completedTurn).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
@@ -406,7 +410,7 @@ describe("Chat", () => {
     fetchMemories.mockResolvedValueOnce(rememberedFacts)
       .mockRejectedValueOnce(new Error("network"))
       .mockResolvedValueOnce([...rememberedFacts, newFact]);
-    sendMessage.mockResolvedValue({
+    completedTurn.mockResolvedValue({
       conversation_id: "chat-2",
       user: message("1", "user", "Remember my dog is a corgi"),
       reply: message("2", "assistant", "Noted."),
@@ -438,7 +442,7 @@ describe("Chat", () => {
     // turn never appeared and could not be forgotten without a reload.
     fetchMessages.mockResolvedValue([]);
     fetchMemories.mockResolvedValueOnce(rememberedFacts);
-    sendMessage.mockResolvedValue({
+    completedTurn.mockResolvedValue({
       conversation_id: "chat-2",
       user: message("1", "user", "Remember my dog is a corgi"),
       reply: message("2", "assistant", "Noted."),
@@ -461,7 +465,7 @@ describe("Chat", () => {
   it("keeps a newly saved fact when a delete invalidates the refresh carrying it", async () => {
     // The delete discarded the whole in flight response, new facts included.
     fetchMessages.mockResolvedValue([]);
-    sendMessage.mockResolvedValue({
+    completedTurn.mockResolvedValue({
       conversation_id: "chat-2",
       user: message("1", "user", "remember something"),
       reply: message("2", "assistant", "Noted."),
@@ -498,7 +502,7 @@ describe("Chat", () => {
     // remember can succeed before the turn fails, so the fact is already stored.
     fetchMessages.mockResolvedValue([]);
     fetchMemories.mockResolvedValueOnce(rememberedFacts);
-    sendMessage.mockRejectedValue(new Error("turn failed"));
+    completedTurn.mockRejectedValue(new Error("turn failed"));
     fetchMemories.mockResolvedValue([
       ...rememberedFacts,
       { id: "saved", fact: "Stored before the failure", created_at: "2026-01-04T00:00:00Z" },
@@ -518,6 +522,9 @@ describe("Chat", () => {
 describe("conversations", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    streamMessage.mockImplementation(async (content, conversationId, handlers) => {
+      handlers.onDone(await completedTurn(content, conversationId));
+    });
     fetchConversations.mockResolvedValue(conversations);
     fetchMessages.mockImplementation(async (id) => [
       message(`${id}-message`, "user", `History for ${id}`),
@@ -563,7 +570,7 @@ describe("conversations", () => {
     expect(screen.getByLabelText("Message")).toHaveValue("");
     expect(document.querySelector('[aria-current="page"]')).toBeNull();
     expect(fetchMessages).toHaveBeenCalledTimes(1);
-    expect(sendMessage).not.toHaveBeenCalled();
+    expect(completedTurn).not.toHaveBeenCalled();
     expect(fetchConversations).toHaveBeenCalledTimes(1);
   });
 
@@ -573,7 +580,7 @@ describe("conversations", () => {
     };
     fetchConversations.mockResolvedValueOnce(conversations)
       .mockResolvedValue([created, ...conversations]);
-    sendMessage.mockResolvedValueOnce({
+    completedTurn.mockResolvedValueOnce({
       conversation_id: created.id,
       user: message("u1", "user", "A new topic"),
       reply: message("a1", "assistant", "New reply"),
@@ -592,11 +599,11 @@ describe("conversations", () => {
     expect(saved).toHaveAttribute("aria-current", "page");
     expect(saved.parentElement?.parentElement?.firstElementChild).toBe(saved.parentElement);
     expect(screen.getByText("New reply")).toBeVisible();
-    expect(sendMessage).toHaveBeenNthCalledWith(1, "A new topic", undefined);
+    expect(completedTurn).toHaveBeenNthCalledWith(1, "A new topic", undefined);
     await userEvent.type(screen.getByLabelText("Message"), "Continue");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByText("Next reply")).toBeVisible();
-    expect(sendMessage).toHaveBeenNthCalledWith(2, "Continue", "chat-3");
+    expect(completedTurn).toHaveBeenNthCalledWith(2, "Continue", "chat-3");
     expect(fetchMessages).toHaveBeenCalledTimes(1);
   });
 
@@ -643,7 +650,7 @@ describe("conversations", () => {
 
   it("keeps a successful exchange when refreshing conversations fails", async () => {
     fetchConversations.mockResolvedValueOnce(conversations).mockRejectedValueOnce(new Error("offline"));
-    sendMessage.mockResolvedValue({
+    completedTurn.mockResolvedValue({
       conversation_id: "chat-3",
       user: message("u1", "user", "New topic"),
       reply: message("a1", "assistant", "Saved reply"),
@@ -660,7 +667,7 @@ describe("conversations", () => {
     expect(screen.getByLabelText("Message")).toHaveValue("");
     expect(screen.getByRole("button", { name: "New conversation" }))
       .toHaveAttribute("aria-current", "page");
-    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(completedTurn).toHaveBeenCalledTimes(1);
   });
 
   it("does not let a slow initial list overwrite a newly saved conversation", async () => {
@@ -670,7 +677,7 @@ describe("conversations", () => {
     };
     fetchConversations.mockReturnValueOnce(new Promise((resolve) => { finishInitialList = resolve; }))
       .mockResolvedValueOnce([created, ...conversations]);
-    sendMessage.mockResolvedValue({
+    completedTurn.mockResolvedValue({
       conversation_id: created.id,
       user: message("u1", "user", "New topic"),
       reply: message("a1", "assistant", "Saved reply"),
@@ -693,6 +700,9 @@ describe("conversations", () => {
 describe("conversation actions", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    streamMessage.mockImplementation(async (content, conversationId, handlers) => {
+      handlers.onDone(await completedTurn(content, conversationId));
+    });
     fetchConversations.mockResolvedValue(conversations);
     fetchMessages.mockImplementation(async (id) => [
       message(`${id}-message`, "user", `History for ${id}`),
@@ -892,4 +902,112 @@ describe("conversation actions", () => {
     expect(await screen.findByText("History for chat-1")).toBeVisible();
     expect(screen.getByRole("button", { name: "New chat" })).toBeEnabled();
   });
+});
+
+describe("live turns", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    fetchConversations.mockResolvedValue(conversations);
+    fetchMessages.mockResolvedValue([message("old", "assistant", "Previous reply")]);
+    fetchMemories.mockResolvedValue(rememberedFacts);
+  });
+
+  async function startStream() {
+    let finish: () => void = () => {};
+    let fail: (error: Error) => void = () => {};
+    const pending = new Promise<void>((resolve, reject) => { finish = resolve; fail = reject; });
+    const captured: { handlers?: StreamHandlers } = {};
+    streamMessage.mockImplementation((_content, _id, handlers) => {
+      captured.handlers = handlers;
+      return pending;
+    });
+    render(<Chat />);
+    await screen.findByText("Previous reply");
+    await userEvent.click(screen.getByRole("button", { name: "Remembered facts (not loaded)" }));
+    await screen.findByText(rememberedFacts[0].fact);
+    await userEvent.type(screen.getByLabelText("Message"), "Hello");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(streamMessage).toHaveBeenCalledExactlyOnceWith("Hello", "chat-2", expect.any(Object));
+    if (!captured.handlers) throw new Error("Stream handlers were not installed");
+    return { handlers: captured.handlers, finish, fail };
+  }
+
+  it("grows the reply and trace, then replaces both with persisted messages", async () => {
+    const { handlers, finish } = await startStream();
+    expect(screen.getByText("Thinking...")).toBeVisible();
+    for (const name of ["Send", "New chat", "Latest chat", "Earlier chat",
+      "Rename conversation: Latest chat", "Delete conversation: Latest chat"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    }
+    act(() => handlers.onStep({ kind: "memory", tool_name: null, detail: "Recalled preference" }));
+    expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Show reasoning (1 step)" }));
+    expect(screen.getByLabelText("Step 1: Memory detail")).toHaveTextContent("Recalled preference");
+    act(() => handlers.onDelta("Hello"));
+    expect(screen.getByText("Hello", { selector: "p" })).toBeVisible();
+    act(() => handlers.onDelta(" live"));
+    expect(screen.getByText("Hello live")).toBeVisible();
+    // Text before a tool call is interim. It survives as a thinking step, so the
+    // reply area clears rather than showing text that done would later drop.
+    act(() => handlers.onStep({ kind: "tool_call", tool_name: "fetch_url", detail: "Read page" }));
+    expect(screen.queryByText("Hello live")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide reasoning (2 steps)" })).toBeVisible();
+    expect(screen.getByLabelText("Step 2: Tool call detail")).toHaveTextContent("Read page");
+    act(() => handlers.onDelta("Final answer"));
+    expect(screen.getByText("Final answer")).toBeVisible();
+
+    await act(async () => {
+      handlers.onDone({
+        conversation_id: "chat-2",
+        user: message("saved-user", "user", "Saved question"),
+        reply: message("saved-reply", "assistant", "Saved answer", [
+          { id: "saved-step", kind: "answer", tool_name: null, detail: "Stored trace" },
+        ]),
+      });
+      finish();
+    });
+
+    expect(screen.getByText("Previous reply")).toBeVisible();
+    expect(screen.getByText("Saved question")).toBeVisible();
+    expect(screen.getByText("Saved answer")).toBeVisible();
+    expect(screen.queryByText("Hello live")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recalled preference")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Show reasoning (1 step)" }));
+    expect(screen.getByLabelText("Step 1: Answer detail")).toHaveTextContent("Stored trace");
+    expect(fetchConversations).toHaveBeenCalledTimes(2);
+    expect(fetchMemories).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "New chat" })).toBeEnabled();
+  });
+
+  it.each(["error event", "connection failure"])(
+    "drops partial output and restores the draft after %s", async (failure) => {
+      const { handlers, fail } = await startStream();
+      act(() => {
+        handlers.onDelta("Unfinished reply");
+        handlers.onStep({ kind: "thinking", tool_name: null, detail: "Partial trace" });
+      });
+      expect(screen.getByText("Unfinished reply")).toBeVisible();
+      await act(async () => {
+        if (failure === "error event") {
+          try {
+            handlers.onError("Turn failed");
+          } catch (error: unknown) {
+            fail(error instanceof Error ? error : new Error("Unexpected error"));
+          }
+        } else {
+          fail(new Error("Connection closed"));
+        }
+      });
+
+      expect(screen.getByText("Could not send that message.")).toBeVisible();
+      expect(screen.getByLabelText("Message")).toHaveValue("Hello");
+      expect(screen.queryByText("Unfinished reply")).not.toBeInTheDocument();
+      expect(screen.queryByText("Partial trace")).not.toBeInTheDocument();
+      expect(screen.getByText("Previous reply")).toBeVisible();
+      expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "New chat" })).toBeEnabled();
+      expect(fetchMemories).toHaveBeenCalledTimes(2);
+    },
+  );
 });
