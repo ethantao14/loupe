@@ -16,7 +16,9 @@ DOCKER_IMAGE = "python:3.13-slim"
 DOCKER_MEMORY = "512m"
 DOCKER_CPUS = "1"
 DOCKER_PIDS_LIMIT = 64
-DOCKER_TIMEOUT_SECONDS = 2
+# A cold daemon's first call routinely takes several seconds, and a timeout is
+# cached, so too tight a bound silently withholds the tool for the whole process.
+DOCKER_TIMEOUT_SECONDS = 10
 DOCKER_PULL_TIMEOUT_SECONDS = 300
 REMOVE_ATTEMPTS = 3  # A first pull is slow, and happens once.
 
