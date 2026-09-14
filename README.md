@@ -5,12 +5,9 @@ and the answer: which tools ran, what came back, why the next step was chosen. L
 each of those steps and puts them on screen.
 
 A persisted chat backed by the Claude API, with a visible tool trace. `fetch_url` reads
-web pages. `run_python` runs Python in a resource-limited subprocess and is off unless
-`ENABLE_CODE_EXECUTION` is set, because executed code can still read files by absolute
-path and reach the network.
-Python runs in a temporary directory without inherited credentials; this is not filesystem
-or network isolation. It requires working POSIX resource limits (finite address-space
-limits are unavailable on macOS).
+web pages. `run_python` executes Python in a Docker container with no network and no
+access to the host filesystem. It is offered only when Docker is available and its
+image can be prepared. Set `ENABLE_CODE_EXECUTION=false` to turn it off.
 
 ## Stack
 

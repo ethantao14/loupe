@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from anthropic.types import ToolParam
 
-from app import config
+from app import config, confine
 from app.memory import MemoryStore
 from app.sandbox import run_python
 
@@ -43,6 +43,7 @@ RUN_PYTHON_TOOL: ToolParam = {
     "name": "run_python",
     "description": (
         "Run Python code for calculations or data processing and return stdout and stderr. "
+        "Code runs in a container with no network and no access to the host filesystem. "
         "Execution has resource and time limits and uses a disposable working directory."
     ),
     "input_schema": {
@@ -72,8 +73,8 @@ REMEMBER_TOOL: ToolParam = {
 
 
 def available_tools() -> list[ToolParam]:
-    """Code execution is offered only when it has been deliberately enabled."""
-    if config.ENABLE_CODE_EXECUTION:
+    """Code execution requires both an enabled flag and available confinement."""
+    if config.ENABLE_CODE_EXECUTION and confine.unavailable_reason() is None:
         return [FETCH_URL_TOOL, RUN_PYTHON_TOOL, REMEMBER_TOOL]
     return [FETCH_URL_TOOL, REMEMBER_TOOL]
 

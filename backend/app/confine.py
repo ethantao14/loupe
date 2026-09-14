@@ -1,7 +1,7 @@
-"""Optional Docker confinement, falling back only when Docker is unavailable.
+"""Required Docker confinement for Python execution.
 
-Only the disposable working directory is mounted from the host. The container
-has no network, a read-only root filesystem, and memory, CPU and process caps.
+No host filesystem is mounted. The container has no network, a read-only root
+filesystem, and memory, CPU and process caps.
 A failed container launch never triggers an unconfined retry.
 """
 
@@ -22,18 +22,17 @@ REMOVE_ATTEMPTS = 3  # A first pull is slow, and happens once.
 
 
 class Probe(NamedTuple):
-    """Whether confinement is usable, and whether failing back is acceptable."""
+    """Whether confinement is usable, with a reason when it is unavailable."""
 
     launcher: str | None
     reason: str | None
-    fatal: bool
 
 
 @cache
 def _availability() -> Probe:
     launcher = shutil.which("docker")
     if launcher is None:
-        return Probe(None, "Docker binary not found on PATH", False)
+        return Probe(None, "Docker binary not found on PATH")
     try:
         result = subprocess.run(
             [launcher, "info", "--format", "{{.ServerVersion}}"],
@@ -44,17 +43,15 @@ def _availability() -> Probe:
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
-        return Probe(None, f"Docker daemon unavailable: {error}", False)
+        return Probe(None, f"Docker daemon unavailable: {error}")
     if result.returncode:
         detail = result.stderr.strip() or f"exit code {result.returncode}"
-        return Probe(None, f"Docker daemon unavailable: {detail}", False)
+        return Probe(None, f"Docker daemon unavailable: {detail}")
 
     missing = _ensure_image(launcher)
     if missing:
-        # Docker is here but unusable. Falling back would quietly drop isolation,
-        # so this is fatal, decided by where it failed rather than by its wording.
-        return Probe(None, missing, True)
-    return Probe(launcher, None, False)
+        return Probe(None, missing)
+    return Probe(launcher, None)
 
 
 def _ensure_image(launcher: str) -> str | None:
@@ -85,22 +82,16 @@ def _ensure_image(launcher: str) -> str | None:
     return None
 
 
-def fatal_error() -> str | None:
-    """A reason the tool must refuse rather than run with weaker confinement."""
-    probe = _availability()
-    return probe.reason if probe.fatal else None
-
-
 def unavailable_reason() -> str | None:
     """Return the cached binary/daemon check, including a bounded probe timeout."""
     return _availability().reason
 
 
 def command_prefix(directory: str) -> list[str]:
-    """Return Docker and container Python arguments, or [] for the host fallback."""
+    """Return Docker and container Python arguments, requiring confinement."""
     launcher = _availability().launcher
     if launcher is None:
-        return []
+        raise RuntimeError("Docker is unavailable")
     return [
         launcher,
         "run",
@@ -120,6 +111,10 @@ def command_prefix(directory: str) -> list[str]:
         # credentials. Blank them so executed code cannot read them.
         *_blank_proxy_arguments(),
         "--memory",
+        DOCKER_MEMORY,
+        # Without an explicit swap total Docker grants an equal amount of swap,
+        # so the cap would really be twice DOCKER_MEMORY.
+        "--memory-swap",
         DOCKER_MEMORY,
         "--cpus",
         DOCKER_CPUS,
@@ -191,11 +186,8 @@ def remove_container(directory: str) -> str | None:
 
 def describe() -> str:
     probe = _availability()
-    if probe.fatal:
-        # Refusing, not falling back, so the trace must not imply code ran.
-        return f"Docker unusable: {probe.reason}; code execution refused"
     if probe.reason is not None:
-        return f"Docker unavailable: {probe.reason}; using weaker POSIX resource limits"
+        return f"Docker unavailable: {probe.reason}; code execution is not offered"
     return (
         f"Docker ({DOCKER_IMAGE}): no host filesystem, no network, read-only root; "
         f"writes bounded to {DOCKER_TMPFS_SIZE}; memory {DOCKER_MEMORY}, CPUs {DOCKER_CPUS}, "
