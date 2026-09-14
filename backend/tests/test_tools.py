@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
-from app import tools
+from app import confine, tools
 
 
 def use_fake_network(monkeypatch, handler, address="93.184.216.34"):
@@ -313,9 +313,23 @@ def test_remember_returns_helpful_storage_error(memory_store):
 
 @pytest.mark.parametrize("enabled", [False, True])
 def test_remember_is_always_offered(monkeypatch, enabled):
+    monkeypatch.setattr(confine, "daemon_unavailable_reason", lambda: None)
     monkeypatch.setattr(tools.config, "ENABLE_CODE_EXECUTION", enabled)
 
     assert tools.REMEMBER_TOOL in tools.available_tools()
     schema = tools.REMEMBER_TOOL["input_schema"]
     assert schema["required"] == ["fact"]
     assert schema["properties"]["fact"]["type"] == "string"
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("reason", [None, "Docker daemon unavailable"])
+def test_python_requires_enabled_flag_and_docker(monkeypatch, enabled, reason):
+    monkeypatch.setattr(tools.config, "ENABLE_CODE_EXECUTION", enabled)
+    monkeypatch.setattr(confine, "daemon_unavailable_reason", lambda: reason)
+
+    offered = tools.available_tools()
+
+    assert (tools.RUN_PYTHON_TOOL in offered) is (enabled and reason is None)
+    assert tools.FETCH_URL_TOOL in offered
+    assert tools.REMEMBER_TOOL in offered

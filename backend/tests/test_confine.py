@@ -80,21 +80,39 @@ def test_working_directory_is_readable_and_writable(confined_host: None) -> None
 
 @pytest.fixture
 def fresh_probe() -> Iterator[None]:
+    confine._daemon.cache_clear()
     confine._availability.cache_clear()
     yield
+    confine._daemon.cache_clear()
     confine._availability.cache_clear()
+
+
+def test_tool_discovery_does_not_prepare_the_image(
+    monkeypatch: pytest.MonkeyPatch, fresh_probe: None,
+) -> None:
+    """A cold image pull must not land on the first chat message."""
+    monkeypatch.setattr(confine.shutil, "which", Mock(return_value="/usr/bin/docker"))
+    probe = Mock(return_value=subprocess.CompletedProcess([], 0, stdout="28.0", stderr=""))
+    monkeypatch.setattr(confine.subprocess, "run", probe)
+
+    assert confine.daemon_unavailable_reason() is None
+
+    assert probe.call_count == 1
+    assert probe.call_args.args[0] == ["/usr/bin/docker", "info", "--format", "{{.ServerVersion}}"]
 
 
 def test_missing_docker_is_reported_and_cached(
-    monkeypatch: pytest.MonkeyPatch, fresh_probe: None, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, fresh_probe: None,
 ) -> None:
     which = Mock(return_value=None)
     probe = Mock()
     monkeypatch.setattr(confine.shutil, "which", which)
     monkeypatch.setattr(confine.subprocess, "run", probe)
 
-    assert confine.command_prefix(str(tmp_path)) == []
-    assert "Docker binary not found" in confine.describe()
+    assert confine.unavailable_reason() is not None
+    assert confine.describe() == (
+        "Docker unavailable: Docker binary not found on PATH; code execution is not offered"
+    )
     assert confine.unavailable_reason() is not None
     which.assert_called_once_with("docker")
     probe.assert_not_called()
@@ -106,7 +124,7 @@ def test_missing_docker_is_reported_and_cached(
     OSError("cannot connect"),
 ])
 def test_unreachable_daemon_is_reported_and_cached(
-    monkeypatch: pytest.MonkeyPatch, fresh_probe: None, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, fresh_probe: None,
     failure: subprocess.CompletedProcess[str] | Exception,
 ) -> None:
     monkeypatch.setattr(confine.shutil, "which", Mock(return_value="/usr/bin/docker"))
@@ -117,7 +135,7 @@ def test_unreachable_daemon_is_reported_and_cached(
         probe.return_value = failure
     monkeypatch.setattr(confine.subprocess, "run", probe)
 
-    assert confine.command_prefix(str(tmp_path)) == []
+    assert confine.unavailable_reason() is not None
     assert "Docker daemon unavailable" in confine.describe()
     assert confine.unavailable_reason() is not None
     probe.assert_called_once()
@@ -144,6 +162,7 @@ def test_docker_prefix_and_successful_probe_are_cached(
         ("--network", "none"),
         ("--log-driver", "none"),
         ("--memory", confine.DOCKER_MEMORY),
+        ("--memory-swap", confine.DOCKER_MEMORY),
         ("--cpus", confine.DOCKER_CPUS),
         ("--pids-limit", str(confine.DOCKER_PIDS_LIMIT)),
         ("--name", directory.name),
@@ -170,11 +189,48 @@ def test_docker_prefix_and_successful_probe_are_cached(
     ]
 
 
+def test_command_prefix_requires_docker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        confine, "_availability", lambda: confine.Probe(None, "Docker unavailable")
+    )
+
+    with pytest.raises(RuntimeError, match="^Docker is unavailable$"):
+        confine.command_prefix(str(tmp_path))
+
+
+@pytest.mark.parametrize("failure", [
+    subprocess.CompletedProcess([], 1, stdout="", stderr="pull refused"),
+    subprocess.TimeoutExpired("docker pull", confine.DOCKER_PULL_TIMEOUT_SECONDS),
+    OSError("cannot connect"),
+])
+def test_unpreparable_image_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch, fresh_probe: None,
+    failure: subprocess.CompletedProcess[str] | Exception,
+) -> None:
+    monkeypatch.setattr(confine.shutil, "which", Mock(return_value="/usr/bin/docker"))
+    probe = Mock(side_effect=[
+        subprocess.CompletedProcess([], 0, stdout="28.0", stderr=""),
+        subprocess.CompletedProcess([], 1, stdout="", stderr="image missing"),
+        failure,
+    ])
+    monkeypatch.setattr(confine.subprocess, "run", probe)
+
+    reason = confine.unavailable_reason()
+
+    assert reason is not None
+    assert reason.startswith(f"Could not prepare {confine.DOCKER_IMAGE}:")
+    assert confine._availability() == confine.Probe(None, reason)
+    assert confine.describe() == f"Docker unavailable: {reason}; code execution is not offered"
+    assert probe.call_count == 3
+    assert probe.call_args.args[0] == ["/usr/bin/docker", "pull", "--quiet", confine.DOCKER_IMAGE]
+    assert probe.call_args.kwargs["timeout"] == confine.DOCKER_PULL_TIMEOUT_SECONDS
+
+
 def test_remove_container_succeeds_quietly(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        confine, "_availability", lambda: confine.Probe("/usr/bin/docker", None, False)
+        confine, "_availability", lambda: confine.Probe("/usr/bin/docker", None)
     )
     remove = Mock(return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=""))
     monkeypatch.setattr(confine.subprocess, "run", remove)
@@ -188,7 +244,7 @@ def test_already_removed_container_is_not_a_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        confine, "_availability", lambda: confine.Probe("/usr/bin/docker", None, False)
+        confine, "_availability", lambda: confine.Probe("/usr/bin/docker", None)
     )
     gone = subprocess.CompletedProcess([], 1, stdout="", stderr="Error: No such container: x")
     monkeypatch.setattr(confine.subprocess, "run", Mock(return_value=gone))
@@ -202,7 +258,7 @@ def test_failed_removal_is_retried_then_reported(
     """A container that outlives its client keeps consuming resources, so a
     failure to remove it must be reported rather than swallowed."""
     monkeypatch.setattr(
-        confine, "_availability", lambda: confine.Probe("/usr/bin/docker", None, False)
+        confine, "_availability", lambda: confine.Probe("/usr/bin/docker", None)
     )
     refused = subprocess.CompletedProcess([], 1, stdout="", stderr="daemon refused")
     remove = Mock(return_value=refused)

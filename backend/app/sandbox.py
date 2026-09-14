@@ -1,30 +1,23 @@
-"""Bound wall clock and captured output, and omit credentials from executed code.
+"""Run Python only in Docker, bounding wall clock time and captured output.
 
-With Docker, host filesystem access is limited to the disposable working directory.
-The container has no network, a read-only root and a bounded writable /tmp.
-Container limits cap memory, CPU bandwidth and process count. Timed-out containers
-are removed after killing the client process group.
-Without Docker, use a scrubbed environment, isolated host interpreter, disposable
-cwd and POSIX CPU-time/file-size limits. Memory is capped where supported (Linux
-yes, macOS no). Arbitrary host file reads, network access and detached descendants
-remain possible. A failed container launch never retries without confinement.
+The container has no network or host filesystem mounts, a read-only root, and
+bounded writable /tmp and /work. Host credentials are not forwarded into it.
+Container limits cap memory, CPU bandwidth and process count, not total CPU time.
+After killing the client process group, container removal is attempted and any
+removal failure is reported. Unavailable Docker or a failed container launch
+never triggers execution on the host.
 """
 
 import os
-import resource
 import selectors
 import signal
 import subprocess
-import sys
 import tempfile
 import time
 from dataclasses import dataclass
 
 from app import confine
 
-CPU_LIMIT_SECONDS = 2
-MEMORY_LIMIT_BYTES = 512 * 1024 * 1024
-FILE_SIZE_LIMIT_BYTES = 1024 * 1024
 WALL_TIMEOUT_SECONDS = 5
 MAX_OUTPUT_CHARS = 4000
 
@@ -51,16 +44,6 @@ def _linux_signal_name(number: int) -> str:
     return LINUX_SIGNALS.get(number, f"signal {number}")
 
 
-def _apply_limits() -> None:
-    resource.setrlimit(resource.RLIMIT_CPU, (CPU_LIMIT_SECONDS, CPU_LIMIT_SECONDS + 1))
-    try:
-        resource.setrlimit(resource.RLIMIT_AS, (MEMORY_LIMIT_BYTES, MEMORY_LIMIT_BYTES))
-    except (ValueError, OSError):
-        pass
-    resource.setrlimit(resource.RLIMIT_FSIZE, (FILE_SIZE_LIMIT_BYTES, FILE_SIZE_LIMIT_BYTES))
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-
-
 def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
     try:
         os.killpg(process.pid, signal.SIGKILL)
@@ -82,30 +65,25 @@ def run_python(code: str) -> SandboxResult:
     if not isinstance(code, str):
         return SandboxResult("Error: code must be a string.", failed=True)
 
-    blocking = confine.fatal_error()
-    if blocking:
-        return SandboxResult(f"Error: {blocking}", failed=True)
+    reason = confine.unavailable_reason()
+    if reason is not None:
+        return SandboxResult(f"Error: Python execution needs Docker: {reason}", failed=True)
 
     output = bytearray()
     note = ""
     try:
         with tempfile.TemporaryDirectory(prefix="loupe-python-") as directory:
-            prefix = confine.command_prefix(directory)
             try:
                 with subprocess.Popen(
-                    (prefix + [code]) if prefix else [sys.executable, "-I", "-u", "-c", code],
+                    confine.command_prefix(directory) + [code],
                     cwd=directory,
                     # Docker needs the host client configuration; no environment is
-                    # forwarded into the container. The fallback stays scrubbed.
-                    env=(
-                        None if prefix
-                        else {"LANG": "C.UTF-8", "HOME": directory, "TMPDIR": directory}
-                    ),
+                    # forwarded into the container.
+                    env=None,
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
-                    preexec_fn=None if prefix else _apply_limits,
                 ) as process:
                     deadline = time.monotonic() + WALL_TIMEOUT_SECONDS
                     try:
@@ -138,7 +116,7 @@ def run_python(code: str) -> SandboxResult:
 
                     returncode = process.returncode
                     # Docker reports container signals as shell-style exit statuses.
-                    if prefix and 128 < returncode < 128 + LINUX_SIGNAL_LIMIT:
+                    if 128 < returncode < 128 + LINUX_SIGNAL_LIMIT:
                         note = (
                             f"Python was killed by {_linux_signal_name(returncode - 128)} "
                             "(a resource limit may have been reached)."
@@ -153,11 +131,10 @@ def run_python(code: str) -> SandboxResult:
                     elif not note and process.returncode:
                         note = f"Python exited with code {process.returncode}."
             finally:
-                if prefix:
-                    failure = confine.remove_container(directory)
-                    if failure:
-                        note = f"{note} ({failure})" if note else failure
+                failure = confine.remove_container(directory)
+                if failure:
+                    note = f"{note} ({failure})" if note else failure
     except (OSError, ValueError, subprocess.SubprocessError) as error:
-        note = f"Could not run Python with required resource limits: {error}"
+        note = f"Could not run Python in a container: {error}"
 
     return SandboxResult(_format_output(output, note), failed=bool(note))
