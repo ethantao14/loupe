@@ -105,3 +105,14 @@ def test_bm25_formula_saturates_frequency_and_normalises_length() -> None:
         assert scores[document] == pytest.approx(expected)
     assert scores[documents[1]] < scores[documents[0]] < 2 * scores[documents[1]]
     assert scores[documents[1]] > scores[documents[2]] > scores[""] == 0
+
+
+def test_fusion_counts_a_repeated_fact_once() -> None:
+    """A fact stored twice must not outvote a better ranked unique fact."""
+    dense = [("Has a corgi", 0.9), ("Uses Python", 0.1), ("Uses Python", 0.1)]
+
+    result = fuse([], dense, k=60)
+
+    assert result[0][0] == "Has a corgi"
+    assert [fact for fact, _ in result] == ["Has a corgi", "Uses Python"]
+    assert result[1][1] == 1 / 62
