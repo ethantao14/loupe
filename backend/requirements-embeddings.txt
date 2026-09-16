@@ -1,0 +1,5 @@
+# Optional, for semantic recall. Large: about 1.1GB of libraries plus 704MB of weights.
+torch==2.10.0
+# The model's remote code imports transformers.masking_utils, which 4.51 predates,
+# and transformers 5 rejects the model's config_class. Both bounds are load-bearing.
+transformers==4.57.6

@@ -16,7 +16,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      # Cache the embedding weights so the semantic recall tests run here rather
+      # than skipping, which is how a broken ranker could ship green.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: huggingface-voyage-4-nano-v1
       - run: pip install -r requirements-dev.txt
+      - run: huggingface-cli download voyageai/voyage-4-nano
       - run: ruff check .
       - run: mypy app
       # -rs reports why anything skipped, so a silently skipped container

@@ -122,7 +122,10 @@ def make_client(fake_db: FakeDb, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         db, "fetch_memories", lambda client, limit=None: client.memories[::-1][:limit]
     )
     monkeypatch.setattr(
-        db, "insert_memory", lambda client, fact: client.memories.append({"fact": fact})
+        db, "insert_memory",
+        lambda client, fact, embedding=None: client.memories.append(
+            {"fact": fact, "embedding": embedding}
+        ),
     )
     monkeypatch.setattr(db, "fetch_conversations", lambda client: client.fetch_conversations())
     monkeypatch.setattr(
@@ -185,7 +188,7 @@ def test_remembers_fact_and_recalls_it_in_later_conversation(monkeypatch):
     first = client.post("/api/messages", json={"content": "I prefer Python."})
 
     assert first.status_code == 200
-    assert fake_db.memories == [{"fact": "The user prefers Python."}]
+    assert fake_db.memories == [{"fact": "The user prefers Python.", "embedding": None}]
     assert requests[0]["system"] == agent.SYSTEM_PROMPT
     assert all(step["kind"] != "memory" for step in first.json()["reply"]["steps"])
 
@@ -199,7 +202,8 @@ def test_remembers_fact_and_recalls_it_in_later_conversation(monkeypatch):
     recalled = second.json()["reply"]["steps"][0]
     assert recalled["kind"] == "memory"
     assert recalled["detail"] == (
-        "Selected 1 of 1 candidates\nRecency fallback: no matching terms\n"
+        "Selected 1 of 1 candidates\nRankers: bm25; Fallback: no matching terms; "
+        "Embeddings unavailable: disabled for test\n"
         "- 0.000 | The user prefers Python."
     )
     assert client.get("/api/messages").json()[1]["steps"][0] == recalled

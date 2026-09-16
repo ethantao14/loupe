@@ -11,7 +11,9 @@ from app.memory import RecallResult
 def test_stream_emits_live_events_in_order_and_matches_run_turn(
     monkeypatch: pytest.MonkeyPatch, memory_store: Mock,
 ) -> None:
-    memory_store.recall_relevant.return_value = RecallResult([("Python preference", 1.5)], 3)
+    memory_store.recall_relevant.return_value = RecallResult(
+        [("Python preference", 1.5)], 3, rankers=("bm25",)
+    )
     run_tool = Mock(return_value=tools.ToolOutcome("Tool failed", failed=True))
     monkeypatch.setattr(tools, "run_tool", run_tool)
     responses = [
@@ -29,7 +31,8 @@ def test_stream_emits_live_events_in_order_and_matches_run_turn(
     memory = next(stream)
     assert memory == agent.StepEvent(agent.Step(
         kind="memory",
-        detail=("Selected 1 of 3 candidates\nBM25: highest scores first\n"
+        detail=("Selected 1 of 3 candidates\n"
+                "Rankers: bm25; Embeddings unavailable: disabled for test\n"
                 "- 1.500 | Python preference"),
     ))
     assert client.requests == []
