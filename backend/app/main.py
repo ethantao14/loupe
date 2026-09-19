@@ -1,6 +1,8 @@
 import json
+import logging
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from uuid import UUID
 
@@ -11,10 +13,21 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 from supabase import Client
 
-from app import agent, claude_client, db
+from app import agent, claude_client, db, embedding
 from app.memory import MemoryStore
 
-app = FastAPI(title="Loupe API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    try:
+        if embedding.unavailable_reason() is None:
+            embedding.load()
+    except Exception:
+        logging.getLogger(__name__).exception("Could not warm up embeddings; continuing startup")
+    yield
+
+
+app = FastAPI(title="Loupe API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

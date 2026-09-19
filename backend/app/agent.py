@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import anthropic
 from anthropic.types import MessageParam, ToolResultBlockParam
 
-from app import confine, tools
+from app import confine, embedding, tools
 from app.config import CLAUDE_MODEL
 from app.memory import RECALL_TOP_K, MemoryStore, RecallResult
 
@@ -69,13 +69,15 @@ def _shorten(text: str, limit: int = MAX_DETAIL_CHARS) -> str:
 
 
 def _memory_detail(recall: RecallResult) -> str:
-    reason = (
-        f"Recency fallback: {recall.fallback_reason}"
-        if recall.fallback_reason
-        else "BM25: highest scores first"
+    detail = f"Rankers: {', '.join(recall.rankers) or 'none'}"
+    if recall.fallback_reason:
+        detail += f"; Fallback: {recall.fallback_reason}"
+    detail += f"; {embedding.describe()}"
+    header = (
+        f"Selected {len(recall.selected)} of {recall.candidate_count} candidates\n"
+        f"{_shorten(detail, 600)}"
     )
-    header = f"Selected {len(recall.selected)} of {recall.candidate_count} candidates\n{reason}"
-    line_limit = (MAX_DETAIL_CHARS - len(header)) // len(recall.selected) - 1
+    line_limit = (MAX_DETAIL_CHARS - len(header)) // max(1, len(recall.selected)) - 1
     lines = [
         _shorten(f"- {score:.3f} | {' '.join(fact.split())}", line_limit)
         for fact, score in recall.selected

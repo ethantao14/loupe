@@ -16,8 +16,8 @@ def get_client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
-def insert_memory(client: Client, fact: str) -> dict:
-    response = client.rpc("insert_memory", {"fact": fact}).execute()
+def insert_memory(client: Client, fact: str, embedding: list[float] | None = None) -> dict:
+    response = client.rpc("insert_memory", {"fact": fact, "embedding": embedding}).execute()
     return cast(dict, response.data)
 
 

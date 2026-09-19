@@ -203,7 +203,7 @@ def test_stops_after_iteration_limit(monkeypatch, memory_store):
 def test_recall_injects_facts_and_records_first_step(memory_store, monkeypatch):
     facts = ["The user prefers Python.", "The project is called Loupe."]
     memory_store.recall_relevant.return_value = RecallResult(
-        [(facts[0], 1.25), (facts[1], 0.5)], 12
+        [(facts[0], 1.25), (facts[1], 0.5)], 12, rankers=("bm25",)
     )
     monkeypatch.setattr(
         tools, "run_tool", Mock(return_value=tools.ToolOutcome("Page content", failed=False))
@@ -215,7 +215,8 @@ def test_recall_injects_facts_and_records_first_step(memory_store, monkeypatch):
     assert result.steps[0] == agent.Step(
         kind="memory",
         detail=(
-            "Selected 2 of 12 candidates\nBM25: highest scores first\n"
+            "Selected 2 of 12 candidates\n"
+            "Rankers: bm25; Embeddings unavailable: disabled for test\n"
             f"- 1.250 | {facts[0]}\n- 0.500 | {facts[1]}"
         ),
     )
@@ -242,7 +243,7 @@ def test_current_user_query_selects_older_relevant_fact(monkeypatch):
     detail = result.steps[0].detail
     assert result.steps[0].kind == "memory"
     assert "Selected 1 of 2 candidates" in detail
-    assert "BM25" in detail
+    assert "Rankers: bm25" in detail
     assert facts[1] in detail and facts[0] not in detail
     assert facts[1] in client.requests[0]["system"]
     assert facts[0] not in client.requests[0]["system"]
@@ -267,7 +268,9 @@ def test_recency_fallback_explained_in_trace(monkeypatch, history, reason):
     assert result.steps[0] == agent.Step(
         kind="memory",
         detail=(
-            f"Selected 2 of 2 candidates\nRecency fallback: {reason}\n"
+            "Selected 2 of 2 candidates\n"
+            f"Rankers: {'bm25' if reason == 'no matching terms' else 'none'}; "
+            f"Fallback: {reason}; Embeddings unavailable: disabled for test\n"
             "- 0.000 | Newest fact\n- 0.000 | Older fact"
         ),
     )
@@ -346,3 +349,16 @@ def test_python_trace_describes_confinement_only_when_enabled(monkeypatch, memor
         description.assert_called_once_with()
     else:
         description.assert_not_called()
+
+
+def test_dense_trace_records_contributors_and_query_failure() -> None:
+    dense = RecallResult([("A corgi", 0.02)], 3, rankers=("bm25", "dense"))
+    detail = agent._memory_detail(dense)
+    assert "Selected 1 of 3 candidates" in detail
+    assert "Rankers: bm25, dense" in detail
+    assert "- 0.020 | A corgi" in detail
+    fallback = RecallResult(
+        [("A corgi", 1.0)], 3, "Dense recall failed: out of memory", ("bm25",)
+    )
+    detail = agent._memory_detail(fallback)
+    assert "Rankers: bm25; Fallback: Dense recall failed: out of memory" in detail

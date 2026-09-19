@@ -2,7 +2,31 @@ import math
 
 import pytest
 
-from app.ranking import K1, B, rank, tokenize
+from app.ranking import K1, RRF_K, B, fuse, rank, tokenize
+
+
+def test_fusion_gates_zero_bm25_votes_that_would_demote_dense_hit() -> None:
+    facts = ["Python preference", "Lives in Boston", "Has a corgi named Biscuit"]
+    bm25 = rank("what breed is my dog", facts)
+    dense = [(facts[2], 0.9), (facts[0], 0.3), (facts[1], 0.1)]
+    assert all(score == 0 for _, score in bm25)
+    naive: dict[str, float] = {}
+    for ranking in (bm25, dense):
+        for position, (fact, _) in enumerate(ranking, start=1):
+            naive[fact] = naive.get(fact, 0) + 1 / (RRF_K + position)
+    assert max(naive, key=lambda fact: naive[fact]) == facts[0]
+    assert fuse(bm25, dense)[0] == (facts[2], 1 / (RRF_K + 1))
+
+
+def test_fusion_combines_votes_and_keeps_unembedded_matches() -> None:
+    result = fuse([("shared", 2), ("lexical", 1), ("ignored", 0)], [("shared", -0.1)], k=10)
+    assert result == [("shared", 2 / 11), ("lexical", 1 / 12)]
+
+
+def test_fusion_ties_are_stable() -> None:
+    assert fuse([("first", 1)], [("second", 1)], k=1) == [("first", 0.5), ("second", 0.5)]
+    assert fuse([], []) == []
+    assert fuse([("ignored", 0), ("negative", -1)], []) == []
 
 
 def test_rare_term_outranks_common_term() -> None:
@@ -81,3 +105,14 @@ def test_bm25_formula_saturates_frequency_and_normalises_length() -> None:
         assert scores[document] == pytest.approx(expected)
     assert scores[documents[1]] < scores[documents[0]] < 2 * scores[documents[1]]
     assert scores[documents[1]] > scores[documents[2]] > scores[""] == 0
+
+
+def test_fusion_counts_a_repeated_fact_once() -> None:
+    """A fact stored twice must not outvote a better ranked unique fact."""
+    dense = [("Has a corgi", 0.9), ("Uses Python", 0.1), ("Uses Python", 0.1)]
+
+    result = fuse([], dense, k=60)
+
+    assert result[0][0] == "Has a corgi"
+    assert [fact for fact, _ in result] == ["Has a corgi", "Uses Python"]
+    assert result[1][1] == 1 / 62

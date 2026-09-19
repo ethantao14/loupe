@@ -159,7 +159,7 @@ def test_insert_memory_uses_rpc():
     client.rpc.return_value.execute.return_value = SimpleNamespace(data=row)
 
     assert db.insert_memory(client, row["fact"]) == row
-    client.rpc.assert_called_once_with("insert_memory", {"fact": row["fact"]})
+    client.rpc.assert_called_once_with("insert_memory", {"fact": row["fact"], "embedding": None})
     client.rpc.return_value.execute.assert_called_once_with()
     client.table.assert_not_called()
 
@@ -274,3 +274,20 @@ def test_delete_conversation(exists: bool) -> None:
     query.eq.assert_called_once_with("id", "chat-id")
     query.execute.assert_called_once_with()
 
+
+def test_insert_memory_passes_embedding_to_rpc() -> None:
+    client = Mock(spec=Client)
+    vector = [1.0, 0.0]
+    db.insert_memory(client, "A corgi", vector)
+    client.rpc.assert_called_once_with("insert_memory", {"fact": "A corgi", "embedding": vector})
+
+
+def test_fetch_memories_keeps_embeddings() -> None:
+    client = Mock(spec=Client)
+    query = client.table.return_value
+    query.select.return_value = query
+    query.order.return_value = query
+    query.range.return_value = query
+    rows = [{"fact": "A corgi", "embedding": [1.0, 0.0]}]
+    query.execute.return_value = SimpleNamespace(data=rows)
+    assert db.fetch_memories(client) == rows

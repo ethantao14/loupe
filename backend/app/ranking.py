@@ -5,6 +5,7 @@ from collections.abc import Sequence
 
 K1 = 1.5  # Controls how quickly repeated term frequency saturates.
 B = 0.75  # Controls how strongly document length normalises term frequency.
+RRF_K = 60
 STOP_WORDS: frozenset[str] = frozenset(
     """
     a about above after again against all also am an and any are aren as at
@@ -73,3 +74,31 @@ def rank(query: str, documents: Sequence[str]) -> list[tuple[str, float]]:
         )
         scored.append((document, score))
     return sorted(scored, key=lambda item: item[1], reverse=True)
+
+
+def _first_occurrences(ranking: Sequence[tuple[str, float]]) -> list[tuple[str, float]]:
+    """Keep each fact once, at its best position. The same fact can be stored
+    twice, and duplicates would otherwise vote twice and shift later ranks."""
+    seen: set[str] = set()
+    unique: list[tuple[str, float]] = []
+    for fact, score in ranking:
+        if fact not in seen:
+            seen.add(fact)
+            unique.append((fact, score))
+    return unique
+
+
+def fuse(
+    bm25: Sequence[tuple[str, float]],
+    dense: Sequence[tuple[str, float]],
+    k: int = RRF_K,
+) -> list[tuple[str, float]]:
+    scores: dict[str, float] = {}
+    for position, (fact, score) in enumerate(_first_occurrences(bm25), start=1):
+        # A zero BM25 score is not a ranking signal: its tie order is just
+        # insertion order, so letting it vote can bury the correct dense hit.
+        if score > 0:
+            scores[fact] = scores.get(fact, 0.0) + 1 / (k + position)
+    for position, (fact, _) in enumerate(_first_occurrences(dense), start=1):
+        scores[fact] = scores.get(fact, 0.0) + 1 / (k + position)
+    return sorted(scores.items(), key=lambda item: item[1], reverse=True)
