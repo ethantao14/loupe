@@ -17,20 +17,20 @@ import {
 } from "@/lib/api";
 
 const stepStyles = {
-  thinking: { label: "Thinking", badge: "bg-violet-400/10 text-violet-300" },
-  tool_call: { label: "Tool call", badge: "bg-sky-400/10 text-sky-300" },
-  tool_result: { label: "Tool result", badge: "bg-amber-400/10 text-amber-300" },
-  tool_error: { label: "Tool error", badge: "bg-red-400/10 text-red-300" },
-  tool_repeat: { label: "Repeated call", badge: "bg-orange-400/10 text-orange-300" },
-  answer: { label: "Answer", badge: "bg-emerald-400/10 text-emerald-300" },
-  memory: { label: "Memory", badge: "bg-rose-400/10 text-rose-300" },
+  thinking: { label: "Thinking", badge: "bg-step-thinking/14 text-step-thinking" },
+  tool_call: { label: "Tool call", badge: "bg-step-call/14 text-step-call" },
+  tool_result: { label: "Tool result", badge: "bg-step-result/14 text-step-result" },
+  tool_error: { label: "Tool error", badge: "bg-step-error/14 text-step-error" },
+  tool_repeat: { label: "Repeated call", badge: "bg-step-repeat/14 text-step-repeat" },
+  answer: { label: "Answer", badge: "bg-step-answer/14 text-step-answer" },
+  memory: { label: "Memory", badge: "bg-step-memory/14 text-step-memory" },
 };
 
 function styleForStep(kind: string) {
   if (Object.prototype.hasOwnProperty.call(stepStyles, kind)) {
     return stepStyles[kind as keyof typeof stepStyles];
   }
-  return { label: "Step", badge: "bg-neutral-400/10 text-neutral-300" };
+  return { label: "Step", badge: "bg-text-secondary/14 text-text-secondary" };
 }
 
 function StepTrace({ steps }: { steps: Step[] }) {
@@ -38,15 +38,15 @@ function StepTrace({ steps }: { steps: Step[] }) {
   const traceId = useId();
 
   return (
-    <div className="mt-3 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/50">
+    <div className="mt-3 overflow-hidden rounded-lg border border-border-subtle bg-surface-1">
       <button
         type="button"
         aria-expanded={expanded}
         aria-controls={traceId}
         onClick={() => setExpanded((current) => !current)}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-neutral-300 transition-colors hover:bg-neutral-800/60 hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-400"
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-text-secondary transition-colors hover:bg-surface-3 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
       >
-        <span aria-hidden="true" className="text-neutral-500">
+        <span aria-hidden="true" className="text-text-muted">
           {expanded ? "▾" : "▸"}
         </span>
         {expanded ? "Hide" : "Show"} reasoning ({steps.length}{" "}
@@ -56,25 +56,25 @@ function StepTrace({ steps }: { steps: Step[] }) {
         id={traceId}
         hidden={!expanded}
         aria-label="Reasoning steps"
-        className="max-h-[32rem] space-y-4 overflow-y-auto border-t border-neutral-800 p-4"
+        className="max-h-[32rem] space-y-4 overflow-y-auto border-t border-border-subtle p-4"
       >
         {steps.map((step, index) => {
           const style = styleForStep(step.kind);
           return (
             <li key={step.id} className="min-w-0">
               <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                <span className="tabular-nums text-neutral-500">{index + 1}.</span>
-                <span className={`rounded px-2 py-1 font-medium ${style.badge}`}>
+                <span className="tabular-nums text-text-secondary">{index + 1}.</span>
+                <span className={`rounded-sm px-2 py-1 font-medium ${style.badge}`}>
                   {style.label}
                 </span>
                 {step.tool_name ? (
-                  <span className="break-all font-mono text-neutral-300">{step.tool_name}</span>
+                  <span className="break-all font-mono text-text-secondary">{step.tool_name}</span>
                 ) : null}
               </div>
               <pre
                 tabIndex={0}
                 aria-label={`Step ${index + 1}: ${style.label} detail`}
-                className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-neutral-950 p-3 font-mono text-xs leading-relaxed text-neutral-300 focus-visible:outline-2 focus-visible:outline-sky-400"
+                className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border-subtle bg-surface-2 p-3 shadow-sm shadow-black/20 font-mono text-xs leading-relaxed text-text-secondary focus-visible:outline-2 focus-visible:outline-accent"
               >
                 {step.detail}
               </pre>
@@ -159,43 +159,43 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
   }
 
   return (
-    <div className="max-w-2xl overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/50">
+    <div className="max-w-2xl overflow-hidden rounded-lg border border-border-subtle bg-surface-1">
       <button
         type="button"
         aria-expanded={expanded}
         aria-controls={panelId}
         onClick={togglePanel}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-neutral-300 transition-colors hover:bg-neutral-800/60 hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-400"
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-text-secondary transition-colors hover:bg-surface-3 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
       >
-        <span aria-hidden="true" className="text-neutral-500">
+        <span aria-hidden="true" className="text-text-muted">
           {expanded ? "▾" : "▸"}
         </span>
         Remembered facts ({memories === null ? "not loaded" : memories.length})
       </button>
-      <div id={panelId} hidden={!expanded} className="space-y-3 border-t border-neutral-800 p-4">
+      <div id={panelId} hidden={!expanded} className="space-y-3 border-t border-border-subtle p-4">
         {isLoading ? (
-          <p role="status" className="text-sm text-neutral-400">Loading remembered facts...</p>
+          <p role="status" className="text-sm text-text-secondary">Loading remembered facts...</p>
         ) : null}
-        {loadError ? <p role="alert" className="break-words text-sm text-red-400">{loadError}</p> : null}
-        {deleteError ? <p role="alert" className="break-words text-sm text-red-400">{deleteError}</p> : null}
+        {loadError ? <p role="alert" className="break-words text-sm text-step-error">{loadError}</p> : null}
+        {deleteError ? <p role="alert" className="break-words text-sm text-step-error">{deleteError}</p> : null}
         {loadError ? (
           <button
             type="button"
             onClick={() => void loadMemories()}
             disabled={isLoading}
-            className="rounded px-2 py-1 text-sm text-sky-300 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50"
+            className="rounded-sm px-2 py-1 text-sm text-accent hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
           >
             Retry loading remembered facts
           </button>
         ) : null}
         {memories?.length === 0 ? (
-          <p className="text-sm text-neutral-400">No remembered facts.</p>
+          <p className="text-sm text-text-secondary">No remembered facts.</p>
         ) : null}
         {memories && memories.length > 0 ? (
           <ul aria-label="Remembered facts" className="max-h-64 space-y-3 overflow-y-auto">
             {memories.map((memory) => (
               <li key={memory.id} className="flex items-start justify-between gap-4">
-                <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-neutral-300">
+                <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-text-secondary">
                   {memory.fact}
                 </p>
                 <button
@@ -203,7 +203,7 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
                   aria-label={`Forget fact: ${memory.fact}`}
                   disabled={deletingId !== null}
                   onClick={() => void forgetMemory(memory)}
-                  className="shrink-0 rounded px-2 py-1 text-xs text-rose-300 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50"
+                  className="shrink-0 rounded-sm px-2 py-1 text-sm text-step-error hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
                 >
                   {deletingId === memory.id ? "Forgetting..." : "Forget"}
                 </button>
@@ -381,13 +381,13 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex h-screen min-w-0 overflow-hidden bg-neutral-950 text-neutral-100">
-      <aside className="flex w-32 shrink-0 flex-col border-r border-neutral-800 p-2 min-[480px]:w-56 sm:w-64 sm:p-4">
+    <div className="flex h-screen min-w-0 overflow-hidden bg-canvas text-text-primary">
+      <aside className="flex w-32 shrink-0 flex-col border-r border-border-subtle bg-surface-1 p-2 min-[480px]:w-56 sm:w-64 sm:p-4">
         <button
           type="button"
           onClick={() => void selectConversation()}
           disabled={sidebarDisabled}
-          className="mb-4 rounded-md border border-neutral-700 px-3 py-2 text-left text-sm hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50"
+          className="mb-4 rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-left text-sm font-medium shadow-sm shadow-black/20 transition-colors hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
         >
           New chat
         </button>
@@ -395,16 +395,16 @@ export default function Chat() {
           {conversations.map((conversation) => {
             const title = conversation.title ?? "New conversation";
             const action = conversationAction?.id === conversation.id ? conversationAction.kind : null;
-            const actionClass = "rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50";
+            const actionClass = "rounded-sm px-2 py-1 text-sm text-text-secondary hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50";
             return (
-              <div key={conversation.id} className="rounded-md border border-neutral-800 p-1">
+              <div key={conversation.id} className="rounded-md border border-border-subtle bg-surface-1 p-1">
                 <button
                   type="button"
                   aria-current={conversation.id === conversationId ? "page" : undefined}
                   disabled={sidebarDisabled}
                   onClick={() => void selectConversation(conversation.id)}
-                  className={`block w-full truncate rounded-md px-3 py-2 text-left text-sm hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50 ${
-                    conversation.id === conversationId ? "bg-neutral-800 text-white" : "text-neutral-400"
+                  className={`block w-full truncate rounded-md px-3 py-2 text-left text-sm hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${
+                    conversation.id === conversationId ? "bg-surface-2 text-text-primary" : "text-text-secondary"
                   }`}
                 >
                   {title}
@@ -427,7 +427,7 @@ export default function Chat() {
                       maxLength={200}
                       disabled={sidebarDisabled}
                       onChange={(event) => setTitleDraft(event.target.value)}
-                      className="w-full min-w-0 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50"
+                      className="w-full min-w-0 rounded-sm border border-border-strong bg-surface-2 px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
                     />
                     <div className="flex flex-wrap gap-1">
                       <button
@@ -451,7 +451,7 @@ export default function Chat() {
                   </form>
                 ) : action === "delete" ? (
                   <div className="space-y-1">
-                    <p className="break-words px-2 text-xs text-neutral-300">
+                    <p className="break-words px-2 text-sm text-text-secondary">
                       Permanently delete &quot;{title}&quot; and all its messages? This cannot be undone.
                     </p>
                     <div className="flex flex-wrap gap-1">
@@ -508,49 +508,49 @@ export default function Chat() {
             );
           })}
         </nav>
-        {conversationError ? <p role="alert" className="mt-3 text-sm text-red-400">{conversationError}</p> : null}
+        {conversationError ? <p role="alert" className="mt-3 text-sm text-step-error">{conversationError}</p> : null}
       </aside>
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b border-neutral-800 px-6 py-4">
-          <h1 className="text-lg font-semibold">Loupe</h1>
+        <header className="border-b border-border-subtle bg-surface-1 px-6 py-4">
+          <h1 className="text-lg font-semibold tracking-tight">Loupe</h1>
         </header>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-6 sm:px-6 [overflow-wrap:anywhere]">
           <MemoryPanel refreshToken={memoryVersion} />
-          {isLoading ? <p className="text-neutral-500">Loading conversation...</p> : null}
+          {isLoading ? <p className="text-sm text-text-secondary">Loading conversation...</p> : null}
           {messages.length === 0 && !provisional && !error && !isLoading ? (
-            <p className="text-neutral-500">Start the conversation below.</p>
+            <p className="text-sm text-text-secondary">Start the conversation below.</p>
           ) : null}
           {[...messages, ...(provisional ? [provisional] : [])].map((message) => (
-            <div key={message.id} className="max-w-2xl">
-              <p className="mb-1 text-xs uppercase tracking-wide text-neutral-500">
+            <div key={message.id} className="max-w-2xl rounded-lg border border-border-subtle bg-surface-2 p-4 shadow-sm shadow-black/20">
+              <p className="mb-2 text-xs uppercase tracking-wide text-text-secondary">
                 {message.role}
               </p>
-              <p className="whitespace-pre-wrap">{message.content}</p>
+              <p className="whitespace-pre-wrap text-base leading-relaxed text-text-primary">{message.content}</p>
               {message === provisional && !message.content && message.steps.length === 0 ? (
-                <p role="status" className="text-neutral-500">Thinking...</p>
+                <p role="status" className="text-sm text-accent">Thinking...</p>
               ) : null}
               {message.role === "assistant" && message.steps.length > 0 ? (
                 <StepTrace steps={message.steps} />
               ) : null}
             </div>
           ))}
-          {error ? <p className="text-red-400">{error}</p> : null}
+          {error ? <p className="text-sm text-step-error">{error}</p> : null}
         </div>
 
-        <form onSubmit={handleSubmit} className="border-t border-neutral-800 px-3 py-4 sm:px-6">
+        <form onSubmit={handleSubmit} className="border-t border-border-subtle bg-surface-1 px-3 py-4 sm:px-6">
           <div className="flex flex-wrap gap-3">
             <input
               aria-label="Message"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               placeholder="Ask something"
-              className="min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 outline-none focus:border-neutral-500"
+              className="min-w-0 flex-1 rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-sm text-text-primary shadow-sm shadow-black/20 placeholder:text-text-secondary focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             />
             <button
               type="submit"
               disabled={sidebarDisabled || isLoading}
-              className="rounded-md bg-neutral-100 px-4 py-2 font-medium text-neutral-900 disabled:opacity-50"
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-canvas shadow-sm shadow-black/20 transition-colors hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
             >
               Send
             </button>

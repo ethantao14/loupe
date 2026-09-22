@@ -215,14 +215,14 @@ describe("Chat", () => {
 
     const badge = screen.getByText("Tool error");
     expect(badge).toBeVisible();
-    expect(badge).toHaveClass("bg-red-400/10", "text-red-300");
+    expect(badge).toHaveClass("bg-step-error/14", "text-step-error");
     expect(screen.getByText("fetch_url")).toBeVisible();
     expect(screen.getByLabelText("Step 1: Tool error detail")).toHaveTextContent(
       "Error: Could not fetch",
     );
   });
 
-  it("renders a repeated tool call with an orange warning badge", async () => {
+  it("renders a repeated tool call with an amber warning badge", async () => {
     fetchMessages.mockResolvedValue([message("1", "assistant", "Trying something else", [{
       id: "repeat-1", kind: "tool_repeat", tool_name: "fetch_url",
       detail: "This exact call already failed. Original error: Could not fetch",
@@ -233,7 +233,7 @@ describe("Chat", () => {
 
     const badge = screen.getByText("Repeated call");
     expect(badge).toBeVisible();
-    expect(badge).toHaveClass("bg-orange-400/10", "text-orange-300");
+    expect(badge).toHaveClass("bg-step-repeat/14", "text-step-repeat");
     expect(screen.getByText("fetch_url")).toBeVisible();
     expect(screen.getByLabelText("Step 1: Repeated call detail")).toHaveTextContent(
       "This exact call already failed. Original error: Could not fetch",
