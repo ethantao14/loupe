@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  --color-canvas: #0a0b0f;
-  --color-surface-1: #111318;
-  --color-surface-2: #171a21;
-  --color-surface-3: #1e222b;
-  --color-border-subtle: #252a34;
-  --color-border-strong: #323845;
+  --color-canvas: #08090d;
+  --color-surface-1: #12141b;
+  --color-surface-2: #1b1f29;
+  --color-surface-3: #252a37;
+  --color-border-subtle: #2c3242;
+  --color-border-strong: #3d4557;
 
   --color-text-primary: #e8eaed;
   --color-text-secondary: #98a2b3;
@@ -48,4 +48,143 @@ pre,
 kbd,
 samp {
   font-family: var(--font-geist-mono);
+}
+
+@layer components {
+  button,
+  .conversation-row {
+    transition: color 150ms ease, background-color 150ms ease,
+      border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  }
+
+  .chat-main {
+    background-image: radial-gradient(
+      ellipse 70% 24rem at 50% 0%,
+      color-mix(in srgb, var(--color-accent) 8%, transparent),
+      transparent
+    );
+  }
+
+  .chat-header::after {
+    position: absolute;
+    inset: auto 0 -1px;
+    height: 1px;
+    content: "";
+    background: linear-gradient(to right, var(--color-accent), transparent);
+    pointer-events: none;
+  }
+
+  .message-user {
+    margin-left: clamp(0.5rem, 4%, 2rem);
+    background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-1));
+  }
+
+  .step-timeline::before {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 16px;
+    width: 2px;
+    content: "";
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      var(--color-border-strong) 24px,
+      var(--color-border-strong) calc(100% - 24px),
+      transparent
+    );
+    pointer-events: none;
+  }
+
+  .trace-step {
+    animation: step-enter 260ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  }
+
+  .step-node {
+    position: absolute;
+    top: 6px;
+    left: -20px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--step-color);
+    box-shadow: 0 0 0 3px var(--color-surface-1),
+      0 0 12px color-mix(in srgb, var(--step-color) 45%, transparent);
+  }
+
+  .step-node::after {
+    position: absolute;
+    inset: -4px;
+    border-radius: inherit;
+    content: "";
+    box-shadow: 0 0 12px var(--step-color);
+    opacity: 0;
+  }
+
+  [data-streaming="true"] .trace-step:last-child .step-node::after {
+    animation: node-pulse 1.6s ease-in-out infinite;
+  }
+
+  .thinking-indicator {
+    width: fit-content;
+    background: linear-gradient(
+      100deg,
+      var(--color-accent) 30%,
+      var(--color-text-primary) 50%,
+      var(--color-accent) 70%
+    );
+    background-size: 250% 100%;
+    background-clip: text;
+    color: transparent;
+    animation: thinking-shimmer 1.6s ease-in-out infinite;
+  }
+
+  .composer-input {
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .composer-input:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 40%, transparent),
+      0 0 22px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+
+  .send-button:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+}
+
+@keyframes step-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes node-pulse {
+  0%, 100% { opacity: 0.2; transform: scale(0.85); }
+  50% { opacity: 0.55; transform: scale(1.25); }
+}
+
+@keyframes thinking-shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .send-button:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .thinking-indicator {
+    background: none;
+    color: CanvasText;
+  }
 }

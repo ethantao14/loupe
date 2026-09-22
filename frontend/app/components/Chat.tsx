@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 
 import {
   deleteConversation,
@@ -17,24 +17,24 @@ import {
 } from "@/lib/api";
 
 const stepStyles = {
-  thinking: { label: "Thinking", badge: "bg-step-thinking/14 text-step-thinking" },
-  tool_call: { label: "Tool call", badge: "bg-step-call/14 text-step-call" },
-  tool_result: { label: "Tool result", badge: "bg-step-result/14 text-step-result" },
-  tool_error: { label: "Tool error", badge: "bg-step-error/14 text-step-error" },
-  tool_repeat: { label: "Repeated call", badge: "bg-step-repeat/14 text-step-repeat" },
-  answer: { label: "Answer", badge: "bg-step-answer/14 text-step-answer" },
-  memory: { label: "Memory", badge: "bg-step-memory/14 text-step-memory" },
+  thinking: { label: "Thinking", badge: "bg-step-thinking/14 text-step-thinking", color: "var(--color-step-thinking)" },
+  tool_call: { label: "Tool call", badge: "bg-step-call/14 text-step-call", color: "var(--color-step-call)" },
+  tool_result: { label: "Tool result", badge: "bg-step-result/14 text-step-result", color: "var(--color-step-result)" },
+  tool_error: { label: "Tool error", badge: "bg-step-error/14 text-step-error", color: "var(--color-step-error)" },
+  tool_repeat: { label: "Repeated call", badge: "bg-step-repeat/14 text-step-repeat", color: "var(--color-step-repeat)" },
+  answer: { label: "Answer", badge: "bg-step-answer/14 text-step-answer", color: "var(--color-step-answer)" },
+  memory: { label: "Memory", badge: "bg-step-memory/14 text-step-memory", color: "var(--color-step-memory)" },
 };
 
 function styleForStep(kind: string) {
   if (Object.prototype.hasOwnProperty.call(stepStyles, kind)) {
     return stepStyles[kind as keyof typeof stepStyles];
   }
-  return { label: "Step", badge: "bg-text-secondary/14 text-text-secondary" };
+  return { label: "Step", badge: "bg-text-secondary/14 text-text-secondary", color: "var(--color-text-secondary)" };
 }
 
 function StepTrace({ steps }: { steps: Step[] }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const traceId = useId();
 
   return (
@@ -44,7 +44,7 @@ function StepTrace({ steps }: { steps: Step[] }) {
         aria-expanded={expanded}
         aria-controls={traceId}
         onClick={() => setExpanded((current) => !current)}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-text-secondary transition-colors hover:bg-surface-3 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-text-secondary transition-colors duration-150 hover:bg-surface-3 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
       >
         <span aria-hidden="true" className="text-text-muted">
           {expanded ? "▾" : "▸"}
@@ -52,36 +52,46 @@ function StepTrace({ steps }: { steps: Step[] }) {
         {expanded ? "Hide" : "Show"} reasoning ({steps.length}{" "}
         {steps.length === 1 ? "step" : "steps"})
       </button>
-      <ol
-        id={traceId}
-        hidden={!expanded}
-        aria-label="Reasoning steps"
-        className="max-h-[32rem] space-y-4 overflow-y-auto border-t border-border-subtle p-4"
-      >
-        {steps.map((step, index) => {
-          const style = styleForStep(step.kind);
-          return (
-            <li key={step.id} className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                <span className="tabular-nums text-text-secondary">{index + 1}.</span>
-                <span className={`rounded-sm px-2 py-1 font-medium ${style.badge}`}>
-                  {style.label}
-                </span>
-                {step.tool_name ? (
-                  <span className="break-all font-mono text-text-secondary">{step.tool_name}</span>
-                ) : null}
-              </div>
-              <pre
-                tabIndex={0}
-                aria-label={`Step ${index + 1}: ${style.label} detail`}
-                className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border-subtle bg-surface-2 p-3 shadow-sm shadow-black/20 font-mono text-xs leading-relaxed text-text-secondary focus-visible:outline-2 focus-visible:outline-accent"
+      <div hidden={!expanded} className="max-h-[32rem] overflow-y-auto border-t border-border-subtle">
+        <ol
+          id={traceId}
+          hidden={!expanded}
+          aria-label="Reasoning steps"
+          className="step-timeline relative space-y-4 py-4 pl-8 pr-3 sm:pr-4"
+        >
+          {steps.map((step, index) => {
+            const style = styleForStep(step.kind);
+            return (
+              <li
+                key={step.id}
+                className="trace-step relative min-w-0"
+                style={{
+                  "--step-color": style.color,
+                  animationDelay: `${Math.min(index * 40, 400)}ms`,
+                } as CSSProperties}
               >
-                {step.detail}
-              </pre>
-            </li>
-          );
-        })}
-      </ol>
+                <span aria-hidden="true" className="step-node" />
+                <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="tabular-nums text-text-secondary">{index + 1}.</span>
+                  <span className={`rounded-sm px-1.5 py-0.5 text-[11px] font-medium ${style.badge}`}>
+                    {style.label}
+                  </span>
+                  {step.tool_name ? (
+                    <span className="break-all font-mono text-text-secondary">{step.tool_name}</span>
+                  ) : null}
+                </div>
+                <pre
+                  tabIndex={0}
+                  aria-label={`Step ${index + 1}: ${style.label} detail`}
+                  className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border-subtle border-l-2 border-l-[var(--step-color)] bg-surface-2 p-3 shadow-sm shadow-black/20 font-mono text-xs leading-relaxed text-text-secondary focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  {step.detail}
+                </pre>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
     </div>
   );
 }
@@ -165,7 +175,7 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
         aria-expanded={expanded}
         aria-controls={panelId}
         onClick={togglePanel}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-text-secondary transition-colors hover:bg-surface-3 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-text-secondary transition-colors duration-150 hover:bg-surface-3 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
       >
         <span aria-hidden="true" className="text-text-muted">
           {expanded ? "▾" : "▸"}
@@ -387,7 +397,7 @@ export default function Chat() {
           type="button"
           onClick={() => void selectConversation()}
           disabled={sidebarDisabled}
-          className="mb-4 rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-left text-sm font-medium shadow-sm shadow-black/20 transition-colors hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
+          className="mb-4 rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-left text-sm font-medium shadow-sm shadow-black/20 transition-colors duration-150 hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
         >
           New chat
         </button>
@@ -397,14 +407,21 @@ export default function Chat() {
             const action = conversationAction?.id === conversation.id ? conversationAction.kind : null;
             const actionClass = "rounded-sm px-2 py-1 text-sm text-text-secondary hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50";
             return (
-              <div key={conversation.id} className="rounded-md border border-border-subtle bg-surface-1 p-1">
+              <div
+                key={conversation.id}
+                className={`conversation-row rounded-md border border-border-subtle border-l-2 p-1 ${
+                  conversation.id === conversationId
+                    ? "border-l-accent bg-surface-3"
+                    : "border-l-transparent bg-surface-1 hover:bg-surface-2"
+                }`}
+              >
                 <button
                   type="button"
                   aria-current={conversation.id === conversationId ? "page" : undefined}
                   disabled={sidebarDisabled}
                   onClick={() => void selectConversation(conversation.id)}
                   className={`block w-full truncate rounded-md px-3 py-2 text-left text-sm hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${
-                    conversation.id === conversationId ? "bg-surface-2 text-text-primary" : "text-text-secondary"
+                    conversation.id === conversationId ? "bg-surface-3 text-text-primary" : "text-text-secondary"
                   }`}
                 >
                   {title}
@@ -510,8 +527,8 @@ export default function Chat() {
         </nav>
         {conversationError ? <p role="alert" className="mt-3 text-sm text-step-error">{conversationError}</p> : null}
       </aside>
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b border-border-subtle bg-surface-1 px-6 py-4">
+      <main className="chat-main flex min-w-0 flex-1 flex-col">
+        <header className="chat-header relative border-b border-border-subtle bg-surface-1 px-6 py-4">
           <h1 className="text-lg font-semibold tracking-tight">Loupe</h1>
         </header>
 
@@ -522,13 +539,19 @@ export default function Chat() {
             <p className="text-sm text-text-secondary">Start the conversation below.</p>
           ) : null}
           {[...messages, ...(provisional ? [provisional] : [])].map((message) => (
-            <div key={message.id} className="max-w-2xl rounded-lg border border-border-subtle bg-surface-2 p-4 shadow-sm shadow-black/20">
+            <div
+              key={message.id}
+              data-streaming={message === provisional && isSending}
+              className={`max-w-2xl rounded-lg border border-border-subtle p-3 shadow-sm shadow-black/20 sm:p-4 ${
+                message.role === "user" ? "message-user border-l-2 border-l-accent" : "bg-surface-2"
+              }`}
+            >
               <p className="mb-2 text-xs uppercase tracking-wide text-text-secondary">
                 {message.role}
               </p>
               <p className="whitespace-pre-wrap text-base leading-relaxed text-text-primary">{message.content}</p>
               {message === provisional && !message.content && message.steps.length === 0 ? (
-                <p role="status" className="text-sm text-accent">Thinking...</p>
+                <p role="status" className="thinking-indicator text-sm">Thinking...</p>
               ) : null}
               {message.role === "assistant" && message.steps.length > 0 ? (
                 <StepTrace steps={message.steps} />
@@ -545,12 +568,12 @@ export default function Chat() {
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               placeholder="Ask something"
-              className="min-w-0 flex-1 rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-sm text-text-primary shadow-sm shadow-black/20 placeholder:text-text-secondary focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="composer-input min-w-0 flex-1 rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             />
             <button
               type="submit"
               disabled={sidebarDisabled || isLoading}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-canvas shadow-sm shadow-black/20 transition-colors hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
+              className="send-button rounded-md bg-accent px-4 py-2 text-sm font-medium text-canvas shadow-sm shadow-black/20 hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
             >
               Send
             </button>
