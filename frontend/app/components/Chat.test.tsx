@@ -189,6 +189,7 @@ describe("Chat", () => {
     render(<Chat />);
 
     expect(await screen.findByText("Hello there")).toBeInTheDocument();
+    expect(screen.queryByText("TRACING")).not.toBeInTheDocument();
   });
 
   it("renders recalled memories with their label", async () => {
@@ -205,7 +206,7 @@ describe("Chat", () => {
     );
   });
 
-  it("renders a failed tool step with a red Tool error badge", async () => {
+  it("renders a failed tool step with a red Tool error label", async () => {
     fetchMessages.mockResolvedValue([message("1", "assistant", "Trying again", [{
       id: "error-1", kind: "tool_error", tool_name: "fetch_url", detail: "Error: Could not fetch",
     }])]);
@@ -215,14 +216,15 @@ describe("Chat", () => {
 
     const badge = screen.getByText("Tool error");
     expect(badge).toBeVisible();
-    expect(badge).toHaveClass("bg-step-error/14", "text-step-error");
+    expect(badge).toHaveClass("text-step-error");
+    expect(badge.parentElement).toHaveClass("step-kind");
     expect(screen.getByText("fetch_url")).toBeVisible();
     expect(screen.getByLabelText("Step 1: Tool error detail")).toHaveTextContent(
       "Error: Could not fetch",
     );
   });
 
-  it("renders a repeated tool call with an amber warning badge", async () => {
+  it("renders a repeated tool call with an amber warning label", async () => {
     fetchMessages.mockResolvedValue([message("1", "assistant", "Trying something else", [{
       id: "repeat-1", kind: "tool_repeat", tool_name: "fetch_url",
       detail: "This exact call already failed. Original error: Could not fetch",
@@ -233,7 +235,8 @@ describe("Chat", () => {
 
     const badge = screen.getByText("Repeated call");
     expect(badge).toBeVisible();
-    expect(badge).toHaveClass("bg-step-repeat/14", "text-step-repeat");
+    expect(badge).toHaveClass("text-step-repeat");
+    expect(badge.parentElement).toHaveClass("step-kind");
     expect(screen.getByText("fetch_url")).toBeVisible();
     expect(screen.getByLabelText("Step 1: Repeated call detail")).toHaveTextContent(
       "This exact call already failed. Original error: Could not fetch",
@@ -961,6 +964,7 @@ describe("live turns", () => {
   it("grows the reply and trace, then replaces both with persisted messages", async () => {
     const { handlers, finish } = await startStream();
     expect(screen.getByText("Thinking...")).toBeVisible();
+    expect(screen.getByText("TRACING")).toBeVisible();
     for (const name of ["Send", "New chat", "Latest chat", "Earlier chat",
       "Rename conversation: Latest chat", "Delete conversation: Latest chat"]) {
       expect(screen.getByRole("button", { name })).toBeDisabled();
@@ -996,6 +1000,7 @@ describe("live turns", () => {
     expect(screen.getByText("Previous reply")).toBeVisible();
     expect(screen.getByText("Saved question")).toBeVisible();
     expect(screen.getByText("Saved answer")).toBeVisible();
+    expect(screen.queryByText("TRACING")).not.toBeInTheDocument();
     expect(screen.queryByText("Hello live")).not.toBeInTheDocument();
     expect(screen.queryByText("Recalled preference")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Hide reasoning (1 step)" })).toHaveAttribute("aria-expanded", "true");

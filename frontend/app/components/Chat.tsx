@@ -17,20 +17,20 @@ import {
 } from "@/lib/api";
 
 const stepStyles = {
-  thinking: { label: "Thinking", badge: "bg-step-thinking/14 text-step-thinking", color: "var(--color-step-thinking)" },
-  tool_call: { label: "Tool call", badge: "bg-step-call/14 text-step-call", color: "var(--color-step-call)" },
-  tool_result: { label: "Tool result", badge: "bg-step-result/14 text-step-result", color: "var(--color-step-result)" },
-  tool_error: { label: "Tool error", badge: "bg-step-error/14 text-step-error", color: "var(--color-step-error)" },
-  tool_repeat: { label: "Repeated call", badge: "bg-step-repeat/14 text-step-repeat", color: "var(--color-step-repeat)" },
-  answer: { label: "Answer", badge: "bg-step-answer/14 text-step-answer", color: "var(--color-step-answer)" },
-  memory: { label: "Memory", badge: "bg-step-memory/14 text-step-memory", color: "var(--color-step-memory)" },
+  thinking: { label: "Thinking", badge: "text-step-thinking", color: "var(--color-step-thinking)" },
+  tool_call: { label: "Tool call", badge: "text-step-call", color: "var(--color-step-call)" },
+  tool_result: { label: "Tool result", badge: "text-step-result", color: "var(--color-step-result)" },
+  tool_error: { label: "Tool error", badge: "text-step-error", color: "var(--color-step-error)" },
+  tool_repeat: { label: "Repeated call", badge: "text-step-repeat", color: "var(--color-step-repeat)" },
+  answer: { label: "Answer", badge: "text-step-answer", color: "var(--color-step-answer)" },
+  memory: { label: "Memory", badge: "text-step-memory", color: "var(--color-step-memory)" },
 };
 
 function styleForStep(kind: string) {
   if (Object.prototype.hasOwnProperty.call(stepStyles, kind)) {
     return stepStyles[kind as keyof typeof stepStyles];
   }
-  return { label: "Step", badge: "bg-text-secondary/14 text-text-secondary", color: "var(--color-text-secondary)" };
+  return { label: "Step", badge: "text-text-secondary", color: "var(--color-text-secondary)" };
 }
 
 function StepTrace({ steps }: { steps: Step[] }) {
@@ -38,7 +38,7 @@ function StepTrace({ steps }: { steps: Step[] }) {
   const traceId = useId();
 
   return (
-    <div className="mt-3 overflow-hidden rounded-lg border border-border-subtle bg-surface-1">
+    <div className="trace-panel">
       <button
         type="button"
         aria-expanded={expanded}
@@ -52,38 +52,38 @@ function StepTrace({ steps }: { steps: Step[] }) {
         {expanded ? "Hide" : "Show"} reasoning ({steps.length}{" "}
         {steps.length === 1 ? "step" : "steps"})
       </button>
-      <div hidden={!expanded} className="max-h-[32rem] overflow-y-auto border-t border-border-subtle">
+      <div hidden={!expanded} className="trace-scroll max-h-[32rem] overflow-y-auto">
         <ol
           id={traceId}
           hidden={!expanded}
           aria-label="Reasoning steps"
-          className="step-timeline relative space-y-4 py-4 pl-8 pr-3 sm:pr-4"
+          className="step-timeline"
         >
           {steps.map((step, index) => {
             const style = styleForStep(step.kind);
             return (
               <li
                 key={step.id}
-                className="trace-step relative min-w-0"
+                className="trace-step glass-surface relative min-w-0"
                 style={{
                   "--step-color": style.color,
-                  animationDelay: `${Math.min(index * 40, 400)}ms`,
+                  animationDelay: `${Math.min(index * 80, 320)}ms`,
                 } as CSSProperties}
               >
                 <span aria-hidden="true" className="step-node" />
-                <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="tabular-nums text-text-secondary">{index + 1}.</span>
-                  <span className={`rounded-sm px-1.5 py-0.5 text-[11px] font-medium ${style.badge}`}>
+                <div className="step-kind flex flex-wrap items-center gap-x-2">
+                  <span className="sr-only">{index + 1}.</span>
+                  <span className={style.badge}>
                     {style.label}
                   </span>
                   {step.tool_name ? (
-                    <span className="break-all font-mono text-text-secondary">{step.tool_name}</span>
+                    <span className="break-all">{step.tool_name}</span>
                   ) : null}
                 </div>
                 <pre
                   tabIndex={0}
                   aria-label={`Step ${index + 1}: ${style.label} detail`}
-                  className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border-subtle border-l-2 border-l-[var(--step-color)] bg-surface-2 p-3 shadow-sm shadow-black/20 font-mono text-xs leading-relaxed text-text-secondary focus-visible:outline-2 focus-visible:outline-accent"
+                  className="step-detail max-h-48 overflow-auto whitespace-pre-wrap break-words focus-visible:outline-2 focus-visible:outline-accent"
                 >
                   {step.detail}
                 </pre>
@@ -169,7 +169,7 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
   }
 
   return (
-    <div className="max-w-2xl overflow-hidden rounded-lg border border-border-subtle bg-surface-1">
+    <div className="memory-panel glass-surface max-w-2xl overflow-hidden rounded-lg border border-glass-border">
       <button
         type="button"
         aria-expanded={expanded}
@@ -182,7 +182,7 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
         </span>
         Remembered facts ({memories === null ? "not loaded" : memories.length})
       </button>
-      <div id={panelId} hidden={!expanded} className="space-y-3 border-t border-border-subtle p-4">
+      <div id={panelId} hidden={!expanded} className="space-y-3 border-t border-glass-border p-4">
         {isLoading ? (
           <p role="status" className="text-sm text-text-secondary">Loading remembered facts...</p>
         ) : null}
@@ -204,7 +204,7 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
         {memories && memories.length > 0 ? (
           <ul aria-label="Remembered facts" className="max-h-64 space-y-3 overflow-y-auto">
             {memories.map((memory) => (
-              <li key={memory.id} className="flex items-start justify-between gap-4">
+              <li key={memory.id} className="memory-fact flex flex-wrap items-start justify-between gap-3">
                 <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-text-secondary">
                   {memory.fact}
                 </p>
@@ -391,13 +391,13 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex h-screen min-w-0 overflow-hidden bg-canvas text-text-primary">
-      <aside className="flex w-32 shrink-0 flex-col border-r border-border-subtle bg-surface-1 p-2 min-[480px]:w-56 sm:w-64 sm:p-4">
+    <div className="chat-shell flex h-dvh min-w-0 overflow-hidden bg-canvas text-text-primary">
+      <aside className="chat-sidebar glass-surface flex w-28 shrink-0 flex-col border-r border-glass-border p-2 min-[480px]:w-56 sm:w-64 sm:p-4">
         <button
           type="button"
           onClick={() => void selectConversation()}
           disabled={sidebarDisabled}
-          className="mb-4 rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-left text-sm font-medium shadow-sm shadow-black/20 transition-colors duration-150 hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
+          className="new-chat mb-4 rounded-md border px-3 py-2.5 text-left text-sm font-medium focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
         >
           New chat
         </button>
@@ -409,10 +409,10 @@ export default function Chat() {
             return (
               <div
                 key={conversation.id}
-                className={`conversation-row rounded-md border border-border-subtle border-l-2 p-1 ${
+                className={`conversation-row rounded-md border border-glass-border border-l-2 p-1 ${
                   conversation.id === conversationId
-                    ? "border-l-accent bg-surface-3"
-                    : "border-l-transparent bg-surface-1 hover:bg-surface-2"
+                    ? "conversation-selected border-l-accent"
+                    : "border-l-transparent hover:bg-glass"
                 }`}
               >
                 <button
@@ -421,7 +421,7 @@ export default function Chat() {
                   disabled={sidebarDisabled}
                   onClick={() => void selectConversation(conversation.id)}
                   className={`block w-full truncate rounded-md px-3 py-2 text-left text-sm hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${
-                    conversation.id === conversationId ? "bg-surface-3 text-text-primary" : "text-text-secondary"
+                    conversation.id === conversationId ? "text-text-primary" : "text-text-secondary"
                   }`}
                 >
                   {title}
@@ -528,11 +528,18 @@ export default function Chat() {
         {conversationError ? <p role="alert" className="mt-3 text-sm text-step-error">{conversationError}</p> : null}
       </aside>
       <main className="chat-main flex min-w-0 flex-1 flex-col">
-        <header className="chat-header relative border-b border-border-subtle bg-surface-1 px-6 py-4">
-          <h1 className="text-lg font-semibold tracking-tight">Loupe</h1>
+        <header className="chat-header flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-5 sm:px-7">
+          <span aria-hidden="true" className="brand-mark" />
+          <h1 className="brand-name">Loupe</h1>
+          {isSending && provisional ? (
+            <span className="live-indicator">
+              <span aria-hidden="true" className="live-dot" />
+              TRACING
+            </span>
+          ) : null}
         </header>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-6 sm:px-6 [overflow-wrap:anywhere]">
+        <div className="message-list min-h-0 flex-1 space-y-6 overflow-y-auto px-3 pb-7 pt-1 sm:px-7 [overflow-wrap:anywhere]">
           <MemoryPanel refreshToken={memoryVersion} />
           {isLoading ? <p className="text-sm text-text-secondary">Loading conversation...</p> : null}
           {messages.length === 0 && !provisional && !error && !isLoading ? (
@@ -542,33 +549,37 @@ export default function Chat() {
             <div
               key={message.id}
               data-streaming={message === provisional && isSending}
-              className={`max-w-2xl rounded-lg border border-border-subtle p-3 shadow-sm shadow-black/20 sm:p-4 ${
-                message.role === "user" ? "message-user border-l-2 border-l-accent" : "bg-surface-2"
+              className={`max-w-2xl min-w-0 ${
+                message.role === "user" ? "message-user" : "message-assistant"
               }`}
             >
-              <p className="mb-2 text-xs uppercase tracking-wide text-text-secondary">
+              <p className="sr-only">
                 {message.role}
               </p>
-              <p className="whitespace-pre-wrap text-base leading-relaxed text-text-primary">{message.content}</p>
               {message === provisional && !message.content && message.steps.length === 0 ? (
                 <p role="status" className="thinking-indicator text-sm">Thinking...</p>
               ) : null}
               {message.role === "assistant" && message.steps.length > 0 ? (
                 <StepTrace steps={message.steps} />
               ) : null}
+              {message.content ? (
+                <p className={message.role === "user" ? "question whitespace-pre-wrap" : "answer-block whitespace-pre-wrap"}>
+                  {message.content}
+                </p>
+              ) : null}
             </div>
           ))}
           {error ? <p className="text-sm text-step-error">{error}</p> : null}
         </div>
 
-        <form onSubmit={handleSubmit} className="border-t border-border-subtle bg-surface-1 px-3 py-4 sm:px-6">
-          <div className="flex flex-wrap gap-3">
+        <form onSubmit={handleSubmit} className="composer glass-surface shrink-0 border-t border-glass-border px-3 py-4 sm:px-7">
+          <div className="flex max-w-2xl flex-wrap gap-3">
             <input
               aria-label="Message"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               placeholder="Ask something"
-              className="composer-input min-w-0 flex-1 rounded-md border border-border-strong bg-surface-2 px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="composer-input min-w-0 flex-1 rounded-md border border-glass-border bg-glass px-3 py-3 text-sm text-text-primary placeholder:text-text-secondary focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             />
             <button
               type="submit"
