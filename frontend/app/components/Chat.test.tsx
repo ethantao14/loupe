@@ -189,6 +189,7 @@ describe("Chat", () => {
     render(<Chat />);
 
     expect(await screen.findByText("Hello there")).toBeInTheDocument();
+    expect(screen.queryByText("TRACING")).not.toBeInTheDocument();
   });
 
   it("renders recalled memories with their label", async () => {
@@ -197,7 +198,7 @@ describe("Chat", () => {
     }])]);
 
     render(<Chat />);
-    await userEvent.click(await screen.findByRole("button", { name: "Show reasoning (1 step)" }));
+    expect(await screen.findByRole("button", { name: "Hide reasoning (1 step)" })).toHaveAttribute("aria-expanded", "true");
 
     expect(screen.getByText("Memory")).toBeVisible();
     expect(screen.getByLabelText("Step 1: Memory detail")).toHaveTextContent(
@@ -205,35 +206,37 @@ describe("Chat", () => {
     );
   });
 
-  it("renders a failed tool step with a red Tool error badge", async () => {
+  it("renders a failed tool step with a red Tool error label", async () => {
     fetchMessages.mockResolvedValue([message("1", "assistant", "Trying again", [{
       id: "error-1", kind: "tool_error", tool_name: "fetch_url", detail: "Error: Could not fetch",
     }])]);
 
     render(<Chat />);
-    await userEvent.click(await screen.findByRole("button", { name: "Show reasoning (1 step)" }));
+    expect(await screen.findByRole("button", { name: "Hide reasoning (1 step)" })).toHaveAttribute("aria-expanded", "true");
 
     const badge = screen.getByText("Tool error");
     expect(badge).toBeVisible();
-    expect(badge).toHaveClass("bg-red-400/10", "text-red-300");
+    expect(badge).toHaveClass("text-step-error");
+    expect(badge.parentElement).toHaveClass("step-kind");
     expect(screen.getByText("fetch_url")).toBeVisible();
     expect(screen.getByLabelText("Step 1: Tool error detail")).toHaveTextContent(
       "Error: Could not fetch",
     );
   });
 
-  it("renders a repeated tool call with an orange warning badge", async () => {
+  it("renders a repeated tool call with an amber warning label", async () => {
     fetchMessages.mockResolvedValue([message("1", "assistant", "Trying something else", [{
       id: "repeat-1", kind: "tool_repeat", tool_name: "fetch_url",
       detail: "This exact call already failed. Original error: Could not fetch",
     }])]);
 
     render(<Chat />);
-    await userEvent.click(await screen.findByRole("button", { name: "Show reasoning (1 step)" }));
+    expect(await screen.findByRole("button", { name: "Hide reasoning (1 step)" })).toHaveAttribute("aria-expanded", "true");
 
     const badge = screen.getByText("Repeated call");
     expect(badge).toBeVisible();
-    expect(badge).toHaveClass("bg-orange-400/10", "text-orange-300");
+    expect(badge).toHaveClass("text-step-repeat");
+    expect(badge.parentElement).toHaveClass("step-kind");
     expect(screen.getByText("fetch_url")).toBeVisible();
     expect(screen.getByLabelText("Step 1: Repeated call detail")).toHaveTextContent(
       "This exact call already failed. Original error: Could not fetch",
@@ -248,7 +251,7 @@ describe("Chat", () => {
       fetchMessages.mockResolvedValue([message("1", "assistant", "Hello", [unknownStep])]);
 
       render(<Chat />);
-      await userEvent.click(await screen.findByRole("button", { name: "Show reasoning (1 step)" }));
+      expect(await screen.findByRole("button", { name: "Hide reasoning (1 step)" })).toHaveAttribute("aria-expanded", "true");
 
       expect(screen.getByText("Step")).toBeVisible();
       expect(screen.getByLabelText("Step 1: Step detail")).toHaveTextContent("Future step detail");
@@ -284,24 +287,22 @@ describe("Chat", () => {
     expect(screen.getByLabelText("Message")).toHaveValue("Hello");
   });
 
-  it("keeps the trace collapsed by default", async () => {
+  it("keeps the trace expanded by default", async () => {
     fetchMessages.mockResolvedValue([message("1", "assistant", "Summary", traceSteps)]);
 
     render(<Chat />);
 
-    const control = await screen.findByRole("button", { name: "Show reasoning (4 steps)" });
-    expect(control).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByText("Checking the page.")).not.toBeVisible();
-    expect(screen.queryByRole("list", { name: "Reasoning steps" })).not.toBeInTheDocument();
+    const control = await screen.findByRole("button", { name: "Hide reasoning (4 steps)" });
+    expect(control).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Checking the page.")).toBeVisible();
+    expect(screen.getByRole("list", { name: "Reasoning steps" })).toBeVisible();
   });
 
-  it("expands and collapses the ordered trace", async () => {
+  it("collapses and reopens the ordered trace", async () => {
     fetchMessages.mockResolvedValue([message("1", "assistant", "Summary", traceSteps)]);
 
     render(<Chat />);
-    await userEvent.click(await screen.findByRole("button", { name: "Show reasoning (4 steps)" }));
-
-    const control = screen.getByRole("button", { name: "Hide reasoning (4 steps)" });
+    const control = await screen.findByRole("button", { name: "Hide reasoning (4 steps)" });
     expect(control).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("list", { name: "Reasoning steps" })).toHaveAttribute(
       "id", control.getAttribute("aria-controls"),
@@ -318,7 +319,17 @@ describe("Chat", () => {
 
     await userEvent.click(control);
     expect(control).toHaveAttribute("aria-expanded", "false");
+    expect(control).toHaveAccessibleName("Show reasoning (4 steps)");
     expect(screen.getByText("Checking the page.")).not.toBeVisible();
+    expect(screen.queryByRole("list", { name: "Reasoning steps" })).not.toBeInTheDocument();
+
+    await userEvent.click(control);
+    expect(control).toHaveAttribute("aria-expanded", "true");
+    expect(control).toHaveAccessibleName("Hide reasoning (4 steps)");
+    expect(screen.getByRole("list", { name: "Reasoning steps" })).toHaveAttribute(
+      "id", control.getAttribute("aria-controls"),
+    );
+    items.forEach((item) => expect(item).toBeVisible());
   });
 
   it("renders no trace control for messages without steps", async () => {
@@ -344,7 +355,7 @@ describe("Chat", () => {
     render(<Chat />);
     await userEvent.type(screen.getByLabelText("Message"), "Read the page");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Show reasoning (4 steps)" }));
+    expect(await screen.findByRole("button", { name: "Hide reasoning (4 steps)" })).toHaveAttribute("aria-expanded", "true");
 
     expect(screen.getByText("Page said hello.")).toBeVisible();
     expect(fetchMessages).toHaveBeenCalledTimes(1);
@@ -953,13 +964,14 @@ describe("live turns", () => {
   it("grows the reply and trace, then replaces both with persisted messages", async () => {
     const { handlers, finish } = await startStream();
     expect(screen.getByText("Thinking...")).toBeVisible();
+    expect(screen.getByText("TRACING")).toBeVisible();
     for (const name of ["Send", "New chat", "Latest chat", "Earlier chat",
       "Rename conversation: Latest chat", "Delete conversation: Latest chat"]) {
       expect(screen.getByRole("button", { name })).toBeDisabled();
     }
     act(() => handlers.onStep({ kind: "memory", tool_name: null, detail: "Recalled preference" }));
     expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Show reasoning (1 step)" }));
+    expect(screen.getByRole("button", { name: "Hide reasoning (1 step)" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByLabelText("Step 1: Memory detail")).toHaveTextContent("Recalled preference");
     act(() => handlers.onDelta("Hello"));
     expect(screen.getByText("Hello", { selector: "p" })).toBeVisible();
@@ -988,9 +1000,10 @@ describe("live turns", () => {
     expect(screen.getByText("Previous reply")).toBeVisible();
     expect(screen.getByText("Saved question")).toBeVisible();
     expect(screen.getByText("Saved answer")).toBeVisible();
+    expect(screen.queryByText("TRACING")).not.toBeInTheDocument();
     expect(screen.queryByText("Hello live")).not.toBeInTheDocument();
     expect(screen.queryByText("Recalled preference")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Show reasoning (1 step)" }));
+    expect(screen.getByRole("button", { name: "Hide reasoning (1 step)" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByLabelText("Step 1: Answer detail")).toHaveTextContent("Stored trace");
     expect(fetchConversations).toHaveBeenCalledTimes(2);
     expect(fetchMemories).toHaveBeenCalledTimes(2);

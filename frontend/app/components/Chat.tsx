@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 
 import {
   deleteConversation,
@@ -17,71 +17,81 @@ import {
 } from "@/lib/api";
 
 const stepStyles = {
-  thinking: { label: "Thinking", badge: "bg-violet-400/10 text-violet-300" },
-  tool_call: { label: "Tool call", badge: "bg-sky-400/10 text-sky-300" },
-  tool_result: { label: "Tool result", badge: "bg-amber-400/10 text-amber-300" },
-  tool_error: { label: "Tool error", badge: "bg-red-400/10 text-red-300" },
-  tool_repeat: { label: "Repeated call", badge: "bg-orange-400/10 text-orange-300" },
-  answer: { label: "Answer", badge: "bg-emerald-400/10 text-emerald-300" },
-  memory: { label: "Memory", badge: "bg-rose-400/10 text-rose-300" },
+  thinking: { label: "Thinking", badge: "text-step-thinking", color: "var(--color-step-thinking)" },
+  tool_call: { label: "Tool call", badge: "text-step-call", color: "var(--color-step-call)" },
+  tool_result: { label: "Tool result", badge: "text-step-result", color: "var(--color-step-result)" },
+  tool_error: { label: "Tool error", badge: "text-step-error", color: "var(--color-step-error)" },
+  tool_repeat: { label: "Repeated call", badge: "text-step-repeat", color: "var(--color-step-repeat)" },
+  answer: { label: "Answer", badge: "text-step-answer", color: "var(--color-step-answer)" },
+  memory: { label: "Memory", badge: "text-step-memory", color: "var(--color-step-memory)" },
 };
 
 function styleForStep(kind: string) {
   if (Object.prototype.hasOwnProperty.call(stepStyles, kind)) {
     return stepStyles[kind as keyof typeof stepStyles];
   }
-  return { label: "Step", badge: "bg-neutral-400/10 text-neutral-300" };
+  return { label: "Step", badge: "text-text-secondary", color: "var(--color-text-secondary)" };
 }
 
 function StepTrace({ steps }: { steps: Step[] }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const traceId = useId();
 
   return (
-    <div className="mt-3 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/50">
+    <div className="trace-panel">
       <button
         type="button"
         aria-expanded={expanded}
         aria-controls={traceId}
         onClick={() => setExpanded((current) => !current)}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-neutral-300 transition-colors hover:bg-neutral-800/60 hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-400"
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-text-secondary transition-colors duration-150 hover:bg-surface-3 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
       >
-        <span aria-hidden="true" className="text-neutral-500">
+        <span aria-hidden="true" className="text-text-muted">
           {expanded ? "▾" : "▸"}
         </span>
         {expanded ? "Hide" : "Show"} reasoning ({steps.length}{" "}
         {steps.length === 1 ? "step" : "steps"})
       </button>
-      <ol
-        id={traceId}
-        hidden={!expanded}
-        aria-label="Reasoning steps"
-        className="max-h-[32rem] space-y-4 overflow-y-auto border-t border-neutral-800 p-4"
-      >
-        {steps.map((step, index) => {
-          const style = styleForStep(step.kind);
-          return (
-            <li key={step.id} className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                <span className="tabular-nums text-neutral-500">{index + 1}.</span>
-                <span className={`rounded px-2 py-1 font-medium ${style.badge}`}>
-                  {style.label}
-                </span>
-                {step.tool_name ? (
-                  <span className="break-all font-mono text-neutral-300">{step.tool_name}</span>
-                ) : null}
-              </div>
-              <pre
-                tabIndex={0}
-                aria-label={`Step ${index + 1}: ${style.label} detail`}
-                className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-neutral-950 p-3 font-mono text-xs leading-relaxed text-neutral-300 focus-visible:outline-2 focus-visible:outline-sky-400"
+      <div hidden={!expanded} className="trace-scroll max-h-[32rem] overflow-y-auto">
+        <ol
+          id={traceId}
+          hidden={!expanded}
+          aria-label="Reasoning steps"
+          className="step-timeline"
+        >
+          {steps.map((step, index) => {
+            const style = styleForStep(step.kind);
+            return (
+              <li
+                key={step.id}
+                className="trace-step glass-surface relative min-w-0"
+                style={{
+                  "--step-color": style.color,
+                  animationDelay: `${Math.min(index * 80, 320)}ms`,
+                } as CSSProperties}
               >
-                {step.detail}
-              </pre>
-            </li>
-          );
-        })}
-      </ol>
+                <span aria-hidden="true" className="step-node" />
+                <div className="step-kind flex flex-wrap items-center gap-x-2">
+                  <span className="sr-only">{index + 1}.</span>
+                  <span className={style.badge}>
+                    {style.label}
+                  </span>
+                  {step.tool_name ? (
+                    <span className="break-all">{step.tool_name}</span>
+                  ) : null}
+                </div>
+                <pre
+                  tabIndex={0}
+                  aria-label={`Step ${index + 1}: ${style.label} detail`}
+                  className="step-detail max-h-48 overflow-auto whitespace-pre-wrap break-words focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  {step.detail}
+                </pre>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
     </div>
   );
 }
@@ -159,43 +169,43 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
   }
 
   return (
-    <div className="max-w-2xl overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900/50">
+    <div className="memory-panel glass-surface max-w-2xl overflow-hidden rounded-lg border border-glass-border">
       <button
         type="button"
         aria-expanded={expanded}
         aria-controls={panelId}
         onClick={togglePanel}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-neutral-300 transition-colors hover:bg-neutral-800/60 hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-400"
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-text-secondary transition-colors duration-150 hover:bg-surface-3 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
       >
-        <span aria-hidden="true" className="text-neutral-500">
+        <span aria-hidden="true" className="text-text-muted">
           {expanded ? "▾" : "▸"}
         </span>
         Remembered facts ({memories === null ? "not loaded" : memories.length})
       </button>
-      <div id={panelId} hidden={!expanded} className="space-y-3 border-t border-neutral-800 p-4">
+      <div id={panelId} hidden={!expanded} className="space-y-3 border-t border-glass-border p-4">
         {isLoading ? (
-          <p role="status" className="text-sm text-neutral-400">Loading remembered facts...</p>
+          <p role="status" className="text-sm text-text-secondary">Loading remembered facts...</p>
         ) : null}
-        {loadError ? <p role="alert" className="break-words text-sm text-red-400">{loadError}</p> : null}
-        {deleteError ? <p role="alert" className="break-words text-sm text-red-400">{deleteError}</p> : null}
+        {loadError ? <p role="alert" className="break-words text-sm text-step-error">{loadError}</p> : null}
+        {deleteError ? <p role="alert" className="break-words text-sm text-step-error">{deleteError}</p> : null}
         {loadError ? (
           <button
             type="button"
             onClick={() => void loadMemories()}
             disabled={isLoading}
-            className="rounded px-2 py-1 text-sm text-sky-300 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50"
+            className="rounded-sm px-2 py-1 text-sm text-accent hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
           >
             Retry loading remembered facts
           </button>
         ) : null}
         {memories?.length === 0 ? (
-          <p className="text-sm text-neutral-400">No remembered facts.</p>
+          <p className="text-sm text-text-secondary">No remembered facts.</p>
         ) : null}
         {memories && memories.length > 0 ? (
           <ul aria-label="Remembered facts" className="max-h-64 space-y-3 overflow-y-auto">
             {memories.map((memory) => (
-              <li key={memory.id} className="flex items-start justify-between gap-4">
-                <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-neutral-300">
+              <li key={memory.id} className="memory-fact flex flex-wrap items-start justify-between gap-3">
+                <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-text-secondary">
                   {memory.fact}
                 </p>
                 <button
@@ -203,7 +213,7 @@ function MemoryPanel({ refreshToken }: { refreshToken: number }) {
                   aria-label={`Forget fact: ${memory.fact}`}
                   disabled={deletingId !== null}
                   onClick={() => void forgetMemory(memory)}
-                  className="shrink-0 rounded px-2 py-1 text-xs text-rose-300 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50"
+                  className="shrink-0 rounded-sm px-2 py-1 text-sm text-step-error hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
                 >
                   {deletingId === memory.id ? "Forgetting..." : "Forget"}
                 </button>
@@ -381,13 +391,13 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex h-screen min-w-0 overflow-hidden bg-neutral-950 text-neutral-100">
-      <aside className="flex w-32 shrink-0 flex-col border-r border-neutral-800 p-2 min-[480px]:w-56 sm:w-64 sm:p-4">
+    <div className="chat-shell flex h-dvh min-w-0 overflow-hidden bg-canvas text-text-primary">
+      <aside className="chat-sidebar glass-surface flex w-28 shrink-0 flex-col border-r border-glass-border p-2 min-[480px]:w-56 sm:w-64 sm:p-4">
         <button
           type="button"
           onClick={() => void selectConversation()}
           disabled={sidebarDisabled}
-          className="mb-4 rounded-md border border-neutral-700 px-3 py-2 text-left text-sm hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50"
+          className="new-chat mb-4 rounded-md border px-3 py-2.5 text-left text-sm font-medium focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
         >
           New chat
         </button>
@@ -395,16 +405,23 @@ export default function Chat() {
           {conversations.map((conversation) => {
             const title = conversation.title ?? "New conversation";
             const action = conversationAction?.id === conversation.id ? conversationAction.kind : null;
-            const actionClass = "rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50";
+            const actionClass = "rounded-sm px-2 py-1 text-sm text-text-secondary hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50";
             return (
-              <div key={conversation.id} className="rounded-md border border-neutral-800 p-1">
+              <div
+                key={conversation.id}
+                className={`conversation-row rounded-md border border-glass-border border-l-2 p-1 ${
+                  conversation.id === conversationId
+                    ? "conversation-selected border-l-accent"
+                    : "border-l-transparent hover:bg-glass"
+                }`}
+              >
                 <button
                   type="button"
                   aria-current={conversation.id === conversationId ? "page" : undefined}
                   disabled={sidebarDisabled}
                   onClick={() => void selectConversation(conversation.id)}
-                  className={`block w-full truncate rounded-md px-3 py-2 text-left text-sm hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50 ${
-                    conversation.id === conversationId ? "bg-neutral-800 text-white" : "text-neutral-400"
+                  className={`block w-full truncate rounded-md px-3 py-2 text-left text-sm hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${
+                    conversation.id === conversationId ? "text-text-primary" : "text-text-secondary"
                   }`}
                 >
                   {title}
@@ -427,7 +444,7 @@ export default function Chat() {
                       maxLength={200}
                       disabled={sidebarDisabled}
                       onChange={(event) => setTitleDraft(event.target.value)}
-                      className="w-full min-w-0 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50"
+                      className="w-full min-w-0 rounded-sm border border-border-strong bg-surface-2 px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50"
                     />
                     <div className="flex flex-wrap gap-1">
                       <button
@@ -451,7 +468,7 @@ export default function Chat() {
                   </form>
                 ) : action === "delete" ? (
                   <div className="space-y-1">
-                    <p className="break-words px-2 text-xs text-neutral-300">
+                    <p className="break-words px-2 text-sm text-text-secondary">
                       Permanently delete &quot;{title}&quot; and all its messages? This cannot be undone.
                     </p>
                     <div className="flex flex-wrap gap-1">
@@ -508,49 +525,66 @@ export default function Chat() {
             );
           })}
         </nav>
-        {conversationError ? <p role="alert" className="mt-3 text-sm text-red-400">{conversationError}</p> : null}
+        {conversationError ? <p role="alert" className="mt-3 text-sm text-step-error">{conversationError}</p> : null}
       </aside>
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b border-neutral-800 px-6 py-4">
-          <h1 className="text-lg font-semibold">Loupe</h1>
+      <main className="chat-main flex min-w-0 flex-1 flex-col">
+        <header className="chat-header flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-5 sm:px-7">
+          <span aria-hidden="true" className="brand-mark" />
+          <h1 className="brand-name">Loupe</h1>
+          {isSending && provisional ? (
+            <span className="live-indicator">
+              <span aria-hidden="true" className="live-dot" />
+              TRACING
+            </span>
+          ) : null}
         </header>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-6 sm:px-6 [overflow-wrap:anywhere]">
+        <div className="message-list min-h-0 flex-1 space-y-6 overflow-y-auto px-3 pb-7 pt-1 sm:px-7 [overflow-wrap:anywhere]">
           <MemoryPanel refreshToken={memoryVersion} />
-          {isLoading ? <p className="text-neutral-500">Loading conversation...</p> : null}
+          {isLoading ? <p className="text-sm text-text-secondary">Loading conversation...</p> : null}
           {messages.length === 0 && !provisional && !error && !isLoading ? (
-            <p className="text-neutral-500">Start the conversation below.</p>
+            <p className="text-sm text-text-secondary">Start the conversation below.</p>
           ) : null}
           {[...messages, ...(provisional ? [provisional] : [])].map((message) => (
-            <div key={message.id} className="max-w-2xl">
-              <p className="mb-1 text-xs uppercase tracking-wide text-neutral-500">
+            <div
+              key={message.id}
+              data-streaming={message === provisional && isSending}
+              className={`max-w-2xl min-w-0 ${
+                message.role === "user" ? "message-user" : "message-assistant"
+              }`}
+            >
+              <p className="sr-only">
                 {message.role}
               </p>
-              <p className="whitespace-pre-wrap">{message.content}</p>
               {message === provisional && !message.content && message.steps.length === 0 ? (
-                <p role="status" className="text-neutral-500">Thinking...</p>
+                <p role="status" className="thinking-indicator text-sm">Thinking...</p>
               ) : null}
               {message.role === "assistant" && message.steps.length > 0 ? (
                 <StepTrace steps={message.steps} />
               ) : null}
+              {message.content ? (
+                <p className={message.role === "user" ? "question whitespace-pre-wrap" : "answer-block whitespace-pre-wrap"}>
+                  {message.content}
+                </p>
+              ) : null}
             </div>
           ))}
-          {error ? <p className="text-red-400">{error}</p> : null}
+          {error ? <p className="text-sm text-step-error">{error}</p> : null}
         </div>
 
-        <form onSubmit={handleSubmit} className="border-t border-neutral-800 px-3 py-4 sm:px-6">
-          <div className="flex flex-wrap gap-3">
+        <form onSubmit={handleSubmit} className="composer glass-surface shrink-0 border-t border-glass-border px-3 py-4 sm:px-7">
+          <div className="flex max-w-2xl flex-wrap gap-3">
             <input
               aria-label="Message"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               placeholder="Ask something"
-              className="min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 outline-none focus:border-neutral-500"
+              className="composer-input min-w-0 flex-1 rounded-md border border-glass-border bg-glass px-3 py-3 text-sm text-text-primary placeholder:text-text-secondary focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             />
             <button
               type="submit"
               disabled={sidebarDisabled || isLoading}
-              className="rounded-md bg-neutral-100 px-4 py-2 font-medium text-neutral-900 disabled:opacity-50"
+              className="send-button rounded-md bg-accent px-4 py-2 text-sm font-medium text-canvas shadow-sm shadow-black/20 hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
             >
               Send
             </button>
