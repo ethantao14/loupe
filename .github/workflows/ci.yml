@@ -48,3 +48,6 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test
+      # A broken import or a font that cannot be fetched fails only here,
+      # so lint, types and tests can all pass on a build that never compiles.
+      - run: npm run build
