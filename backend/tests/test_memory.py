@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, call
 
 import pytest
+from conftest import VISITOR_ID
 from supabase import Client
 
 from app import db, embedding
@@ -13,9 +14,9 @@ def test_remember_stores_fact(monkeypatch):
     insert = Mock()
     monkeypatch.setattr(db, "insert_memory", insert)
 
-    MemoryStore(client).remember("The user prefers Python.")
+    MemoryStore(client, VISITOR_ID).remember("The user prefers Python.")
 
-    insert.assert_called_once_with(client, "The user prefers Python.", None)
+    insert.assert_called_once_with(client, VISITOR_ID, "The user prefers Python.", None)
 
 
 def test_recall_returns_facts_with_requested_limit(monkeypatch):
@@ -23,8 +24,8 @@ def test_recall_returns_facts_with_requested_limit(monkeypatch):
     fetch = Mock(return_value=[{"fact": "Latest fact"}, {"fact": "Older fact"}])
     monkeypatch.setattr(db, "fetch_memories", fetch)
 
-    assert MemoryStore(client).recall(2) == ["Latest fact", "Older fact"]
-    fetch.assert_called_once_with(client, 2)
+    assert MemoryStore(client, VISITOR_ID).recall(2) == ["Latest fact", "Older fact"]
+    fetch.assert_called_once_with(client, VISITOR_ID, 2)
 
 
 def test_relevance_returns_best_matches_instead_of_newest(monkeypatch):
@@ -33,14 +34,14 @@ def test_relevance_returns_best_matches_instead_of_newest(monkeypatch):
     fetch = Mock(return_value=[{"fact": fact} for fact in facts])
     monkeypatch.setattr(db, "fetch_memories", fetch)
 
-    result = MemoryStore(client).recall_relevant("Python", limit=1)
+    result = MemoryStore(client, VISITOR_ID).recall_relevant("Python", limit=1)
 
     assert [fact for fact, _ in result.selected] == [facts[-1]]
     assert result.selected[0][1] > 0
     assert result.candidate_count == 3
     assert result.fallback_reason is None
     assert result.rankers == ("bm25",)
-    fetch.assert_called_once_with(client, MAX_MEMORY_CANDIDATES)
+    fetch.assert_called_once_with(client, VISITOR_ID, MAX_MEMORY_CANDIDATES)
 
 
 @pytest.mark.parametrize(
@@ -57,7 +58,7 @@ def test_relevance_falls_back_to_recency(monkeypatch, query, reason):
     fetch = Mock(return_value=[{"fact": "Newest"}, {"fact": "Older"}, {"fact": "Oldest"}])
     monkeypatch.setattr(db, "fetch_memories", fetch)
 
-    result = MemoryStore(Mock(spec=Client)).recall_relevant(query, limit=2)
+    result = MemoryStore(Mock(spec=Client), VISITOR_ID).recall_relevant(query, limit=2)
 
     assert result.selected == [("Newest", 0.0), ("Older", 0.0)]
     assert result.candidate_count == 3
@@ -68,7 +69,7 @@ def test_relevance_top_k_preserves_recency_for_ties(monkeypatch):
     facts = [f"Python {index}" for index in range(RECALL_TOP_K + 2)] + ["Unrelated"]
     monkeypatch.setattr(db, "fetch_memories", Mock(return_value=[{"fact": f} for f in facts]))
 
-    result = MemoryStore(Mock(spec=Client)).recall_relevant("Python")
+    result = MemoryStore(Mock(spec=Client), VISITOR_ID).recall_relevant("Python")
 
     assert [fact for fact, _ in result.selected] == facts[:RECALL_TOP_K]
     assert all(score > 0 for _, score in result.selected)
@@ -80,7 +81,7 @@ def test_relevance_does_not_fill_matches_with_zero_scores(monkeypatch):
         db, "fetch_memories", Mock(return_value=[{"fact": "Unrelated"}, {"fact": "Python"}])
     )
 
-    result = MemoryStore(Mock(spec=Client)).recall_relevant("Python")
+    result = MemoryStore(Mock(spec=Client), VISITOR_ID).recall_relevant("Python")
 
     assert [fact for fact, _ in result.selected] == ["Python"]
 
@@ -88,7 +89,7 @@ def test_relevance_does_not_fill_matches_with_zero_scores(monkeypatch):
 def test_relevance_empty_store(monkeypatch):
     monkeypatch.setattr(db, "fetch_memories", Mock(return_value=[]))
 
-    result = MemoryStore(Mock(spec=Client)).recall_relevant("Python")
+    result = MemoryStore(Mock(spec=Client), VISITOR_ID).recall_relevant("Python")
 
     assert result.selected == []
     assert result.candidate_count == 0
@@ -99,7 +100,9 @@ def test_relevance_nonpositive_limit_skips_fetch(monkeypatch, limit):
     fetch = Mock()
     monkeypatch.setattr(db, "fetch_memories", fetch)
 
-    assert MemoryStore(Mock(spec=Client)).recall_relevant("Python", limit).selected == []
+    assert (
+        MemoryStore(Mock(spec=Client), VISITOR_ID).recall_relevant("Python", limit).selected == []
+    )
     fetch.assert_not_called()
 
 
@@ -110,6 +113,7 @@ def test_relevance_paginates_candidates_up_to_cap():
     client = Mock(spec=Client)
     query = client.table.return_value
     query.select.return_value = query
+    query.eq.return_value = query
     query.order.return_value = query
     query.range.return_value = query
 
@@ -119,7 +123,7 @@ def test_relevance_paginates_candidates_up_to_cap():
 
     query.execute.side_effect = execute
 
-    result = MemoryStore(client).recall_relevant("Quasar")
+    result = MemoryStore(client, VISITOR_ID).recall_relevant("Quasar")
 
     assert [fact for fact, _ in result.selected] == ["Quasar"]
     assert result.candidate_count == MAX_MEMORY_CANDIDATES
@@ -133,11 +137,19 @@ def test_dense_recall_without_lexical_matches(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(embedding, "unavailable_reason", lambda: None)
     encode = Mock(return_value=[1.0, 0.0])
     monkeypatch.setattr(embedding, "encode_query", encode)
-    monkeypatch.setattr(db, "fetch_memories", Mock(return_value=[
-        {"fact": "Uses Python", "embedding": [0.0, 1.0]},
-        {"fact": "Has a corgi", "embedding": [1.0, 0.0]},
-    ]))
-    result = MemoryStore(Mock(spec=Client)).recall_relevant("what breed is my dog", limit=1)
+    monkeypatch.setattr(
+        db,
+        "fetch_memories",
+        Mock(
+            return_value=[
+                {"fact": "Uses Python", "embedding": [0.0, 1.0]},
+                {"fact": "Has a corgi", "embedding": [1.0, 0.0]},
+            ]
+        ),
+    )
+    result = MemoryStore(Mock(spec=Client), VISITOR_ID).recall_relevant(
+        "what breed is my dog", limit=1
+    )
     assert result.selected[0][0] == "Has a corgi"
     assert result.rankers == ("dense",)
     assert result.fallback_reason is None
@@ -148,24 +160,31 @@ def test_dense_recall_without_lexical_matches(monkeypatch: pytest.MonkeyPatch) -
 def test_unembedded_facts_participate_through_bm25(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(embedding, "unavailable_reason", lambda: None)
     monkeypatch.setattr(embedding, "encode_query", Mock(return_value=[1.0, 0.0]))
-    monkeypatch.setattr(db, "fetch_memories", Mock(return_value=[
-        {"fact": "Has a corgi", "embedding": [1.0, 0.0]},
-        {"fact": "Walks the dog", "embedding": None},
-        {"fact": "Unrelated", "embedding": None},
-    ]))
-    result = MemoryStore(Mock(spec=Client)).recall_relevant("dog")
+    monkeypatch.setattr(
+        db,
+        "fetch_memories",
+        Mock(
+            return_value=[
+                {"fact": "Has a corgi", "embedding": [1.0, 0.0]},
+                {"fact": "Walks the dog", "embedding": None},
+                {"fact": "Unrelated", "embedding": None},
+            ]
+        ),
+    )
+    result = MemoryStore(Mock(spec=Client), VISITOR_ID).recall_relevant("dog")
     assert {fact for fact, _ in result.selected} == {"Has a corgi", "Walks the dog"}
     assert result.rankers == ("bm25", "dense")
 
 
 @pytest.mark.parametrize("query", ["Python", "unmatched"])
 def test_failed_query_embedding_degrades_to_bm25(
-    monkeypatch: pytest.MonkeyPatch, query: str,
+    monkeypatch: pytest.MonkeyPatch,
+    query: str,
 ) -> None:
     monkeypatch.setattr(embedding, "unavailable_reason", lambda: None)
     monkeypatch.setattr(embedding, "encode_query", Mock(side_effect=RuntimeError("out of memory")))
     monkeypatch.setattr(db, "fetch_memories", Mock(return_value=[{"fact": "Python"}]))
-    result = MemoryStore(Mock(spec=Client)).recall_relevant(query)
+    result = MemoryStore(Mock(spec=Client), VISITOR_ID).recall_relevant(query)
     assert result.selected[0][0] == "Python"
     assert result.rankers == ("bm25",)
     assert "out of memory" in (result.fallback_reason or "")
@@ -178,14 +197,15 @@ def test_available_model_without_stored_vectors_uses_bm25(monkeypatch: pytest.Mo
     monkeypatch.setattr(embedding, "unavailable_reason", lambda: None)
     monkeypatch.setattr(embedding, "encode_query", Mock(return_value=[1.0]))
     monkeypatch.setattr(db, "fetch_memories", Mock(return_value=[{"fact": "Python"}]))
-    result = MemoryStore(Mock(spec=Client)).recall_relevant("Python")
+    result = MemoryStore(Mock(spec=Client), VISITOR_ID).recall_relevant("Python")
     assert result.rankers == ("bm25",)
     assert result.fallback_reason is None
 
 
 @pytest.mark.parametrize("failure", [False, True])
 def test_remember_embeds_or_preserves_fact_on_failure(
-    monkeypatch: pytest.MonkeyPatch, failure: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: bool,
 ) -> None:
     monkeypatch.setattr(embedding, "unavailable_reason", lambda: None)
     encode = Mock(return_value=[[1.0, 0.0]])
@@ -195,18 +215,22 @@ def test_remember_embeds_or_preserves_fact_on_failure(
     insert = Mock()
     monkeypatch.setattr(db, "insert_memory", insert)
     client = Mock(spec=Client)
-    MemoryStore(client).remember("Has a corgi")
-    insert.assert_called_once_with(client, "Has a corgi", None if failure else [1.0, 0.0])
+    MemoryStore(client, VISITOR_ID).remember("Has a corgi")
+    insert.assert_called_once_with(
+        client, VISITOR_ID, "Has a corgi", None if failure else [1.0, 0.0]
+    )
     encode.assert_called_once_with(["Has a corgi"])
 
 
 @pytest.mark.parametrize("query, limit", [("dog", 0), (None, 2), ("the and", 2)])
 def test_early_returns_skip_rankers(
-    monkeypatch: pytest.MonkeyPatch, query: str | None, limit: int,
+    monkeypatch: pytest.MonkeyPatch,
+    query: str | None,
+    limit: int,
 ) -> None:
     monkeypatch.setattr(db, "fetch_memories", Mock(return_value=[{"fact": "corgi"}]))
     encode = Mock(side_effect=AssertionError("should not embed"))
     monkeypatch.setattr(embedding, "encode_query", encode)
-    result = MemoryStore(Mock(spec=Client)).recall_relevant(query, limit)
+    result = MemoryStore(Mock(spec=Client), VISITOR_ID).recall_relevant(query, limit)
     assert result.rankers == ()
     encode.assert_not_called()

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   deleteConversation,
@@ -12,6 +12,13 @@ import {
   type SendResult,
 } from "./api";
 
+const visitorId = "11111111-1111-4111-8111-111111111111";
+const visitorHeaders = { "X-Visitor-Id": visitorId };
+
+beforeEach(() => {
+  vi.stubGlobal("localStorage", { getItem: vi.fn().mockReturnValue(visitorId) });
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -23,7 +30,7 @@ describe("memory API", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     expect(await fetchMemories()).toEqual(memories);
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/\/api\/memories$/));
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/\/api\/memories$/), { headers: visitorHeaders });
   });
 
   it("accepts an empty 204 delete response without parsing JSON", async () => {
@@ -32,7 +39,7 @@ describe("memory API", () => {
 
     await expect(deleteMemory("memory-1")).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
-      expect.stringMatching(/\/api\/memories\/memory-1$/), { method: "DELETE" },
+      expect.stringMatching(/\/api\/memories\/memory-1$/), { method: "DELETE", headers: visitorHeaders },
     );
   });
 
@@ -57,7 +64,7 @@ describe("conversation API", () => {
 
     expect(await fetchConversations()).toEqual(conversations);
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
-      expect.stringMatching(/\/api\/conversations$/),
+      expect.stringMatching(/\/api\/conversations$/), { headers: visitorHeaders },
     );
   });
 
@@ -67,7 +74,7 @@ describe("conversation API", () => {
 
     expect(await fetchMessages(id)).toEqual([]);
     const suffix = id ? `/api/messages?conversation_id=${encodeURIComponent(id)}` : "/api/messages";
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(suffix));
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(suffix), { headers: visitorHeaders });
     expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get("conversation_id")).toBe(id ?? null);
   });
 
@@ -79,7 +86,7 @@ describe("conversation API", () => {
     expect(await sendMessage("Hello", id)).toEqual(result);
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/\/api\/messages$/), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...visitorHeaders },
       body: JSON.stringify(id ? { content: "Hello", conversation_id: id } : { content: "Hello" }),
     });
   });
@@ -96,7 +103,7 @@ describe("conversation mutation API", () => {
       expect.stringMatching(/\/api\/conversations\/chat%20%2F1$/),
       {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...visitorHeaders },
         body: JSON.stringify({ title: "New title" }),
       },
     );
@@ -108,7 +115,7 @@ describe("conversation mutation API", () => {
 
     await expect(deleteConversation("chat /1")).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
-      expect.stringMatching(/\/api\/conversations\/chat%20%2F1$/), { method: "DELETE" },
+      expect.stringMatching(/\/api\/conversations\/chat%20%2F1$/), { method: "DELETE", headers: visitorHeaders },
     );
   });
 
@@ -174,7 +181,7 @@ describe("message streaming API", () => {
       expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
         expect.stringMatching(/\/api\/messages\/stream$/), {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...visitorHeaders },
           body: JSON.stringify({ content: "Hi", conversation_id: "chat-1" }),
         },
       );

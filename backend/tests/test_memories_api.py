@@ -3,6 +3,7 @@ from unittest.mock import Mock, call
 from uuid import UUID
 
 import pytest
+from conftest import VISITOR_ID
 from fastapi.testclient import TestClient
 from supabase import Client
 
@@ -21,7 +22,7 @@ def memory_client(monkeypatch):
     query.delete.return_value = query
     query.eq.return_value = query
     monkeypatch.setitem(app.dependency_overrides, get_db_client, lambda: database)
-    with TestClient(app) as client:
+    with TestClient(app, headers={"X-Visitor-Id": VISITOR_ID}) as client:
         yield client, database, query
 
 
@@ -85,7 +86,7 @@ def test_delete_memory_removes_only_selected_fact_and_excludes_it_from_recall(me
     assert rows == [remaining]
     database.table.assert_called_once_with("memories")
     query.delete.assert_called_once_with()
-    query.eq.assert_called_once_with("id", removed["id"])
+    assert query.eq.call_args_list == [call("visitor_id", VISITOR_ID), call("id", removed["id"])]
     query.execute.assert_called_once_with()
     query.select.assert_not_called()
     database.rpc.assert_not_called()
@@ -93,7 +94,7 @@ def test_delete_memory_removes_only_selected_fact_and_excludes_it_from_recall(me
     query.execute.side_effect = None
     query.execute.return_value = SimpleNamespace(data=rows)
     assert client.get("/api/memories").json() == [remaining]
-    assert MemoryStore(database).recall(10) == [remaining["fact"]]
+    assert MemoryStore(database, VISITOR_ID).recall(10) == [remaining["fact"]]
 
 
 def test_delete_unknown_memory_returns_not_found(memory_client):
@@ -104,7 +105,10 @@ def test_delete_unknown_memory_returns_not_found(memory_client):
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Remembered fact not found."}
-    query.eq.assert_called_once_with("id", str(UUID(int=99)))
+    assert query.eq.call_args_list == [
+        call("visitor_id", VISITOR_ID),
+        call("id", str(UUID(int=99))),
+    ]
 
 
 @pytest.mark.parametrize("memory_id", ["not-a-uuid", "123", "null"])

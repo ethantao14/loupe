@@ -3,6 +3,8 @@ from unittest.mock import Mock
 
 import pytest
 
+VISITOR_ID = "11111111-1111-4111-8111-111111111111"
+
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 os.environ.setdefault("SUPABASE_URL", "https://example.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_KEY", "test-key")

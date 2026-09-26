@@ -3,6 +3,7 @@ from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
+from conftest import VISITOR_ID
 from fastapi.testclient import TestClient
 from stream_helpers import FakeMessageStream
 
@@ -21,27 +22,31 @@ class FakeDb:
         self.steps: list[dict] = []
         self.memories: list[dict] = []
 
-    def fetch_conversations(self) -> list[dict]:
-        return self.conversations[::-1]
+    def fetch_conversations(self, visitor_id: str) -> list[dict]:
+        return [row for row in self.conversations[::-1] if row["visitor_id"] == visitor_id]
 
-    def fetch_latest_conversation_id(self) -> str | None:
-        return self.conversations[-1]["id"] if self.conversations else None
+    def fetch_latest_conversation_id(self, visitor_id: str) -> str | None:
+        rows = self.fetch_conversations(visitor_id)
+        return rows[0]["id"] if rows else None
 
-    def conversation_exists(self, conversation_id: str) -> bool:
-        return any(row["id"] == conversation_id for row in self.conversations)
+    def conversation_exists(self, visitor_id: str, conversation_id: str) -> bool:
+        return self.fetch_conversation(visitor_id, conversation_id) is not None
 
-    def fetch_conversation(self, conversation_id: str) -> dict | None:
-        return next((row for row in self.conversations if row["id"] == conversation_id), None)
+    def fetch_conversation(self, visitor_id: str, conversation_id: str) -> dict | None:
+        return next(
+            (row for row in self.fetch_conversations(visitor_id) if row["id"] == conversation_id),
+            None,
+        )
 
-    def rename_conversation(self, conversation_id: str, title: str) -> dict | None:
-        conversation = self.fetch_conversation(conversation_id)
+    def rename_conversation(self, visitor_id: str, conversation_id: str, title: str) -> dict | None:
+        conversation = self.fetch_conversation(visitor_id, conversation_id)
         if conversation is None:
             return None
         conversation["title"] = title
         return conversation
 
-    def delete_conversation(self, conversation_id: str) -> bool:
-        conversation = self.fetch_conversation(conversation_id)
+    def delete_conversation(self, visitor_id: str, conversation_id: str) -> bool:
+        conversation = self.fetch_conversation(visitor_id, conversation_id)
         if conversation is None:
             return False
         self.conversations.remove(conversation)
@@ -55,6 +60,7 @@ class FakeDb:
 
     def insert_exchange_with_steps(
         self,
+        visitor_id: str,
         conversation_id: str | None,
         user_content: str,
         reply_content: str,
@@ -62,12 +68,17 @@ class FakeDb:
     ) -> tuple[str, dict, dict, list[dict]]:
         if conversation_id is None:
             conversation_id = str(uuid4())
-            self.conversations.append({
-                "id": conversation_id,
-                "title": None,
-                "created_at": "2026-01-01T00:00:00Z",
-            })
-        conversation = next(row for row in self.conversations if row["id"] == conversation_id)
+            self.conversations.append(
+                {
+                    "id": conversation_id,
+                    "visitor_id": visitor_id,
+                    "title": None,
+                    "created_at": "2026-01-01T00:00:00Z",
+                }
+            )
+        conversation = self.fetch_conversation(visitor_id, conversation_id)
+        if conversation is None:
+            raise RuntimeError("Conversation not found.")
         if conversation["title"] is None:
             conversation["title"] = " ".join(user_content.split())[:60] or None
         inserted: list[dict] = []
@@ -119,26 +130,37 @@ class FakeClaudeClient:
 
 def make_client(fake_db: FakeDb, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(
-        db, "fetch_memories", lambda client, limit=None: client.memories[::-1][:limit]
+        db,
+        "fetch_memories",
+        lambda client, visitor_id, limit=None: [
+            row for row in client.memories[::-1] if row["visitor_id"] == visitor_id
+        ][:limit],
     )
     monkeypatch.setattr(
-        db, "insert_memory",
-        lambda client, fact, embedding=None: client.memories.append(
-            {"fact": fact, "embedding": embedding}
+        db,
+        "insert_memory",
+        lambda client, visitor_id, fact, embedding=None: client.memories.append(
+            {"visitor_id": visitor_id, "fact": fact, "embedding": embedding}
         ),
     )
-    monkeypatch.setattr(db, "fetch_conversations", lambda client: client.fetch_conversations())
     monkeypatch.setattr(
-        db, "rename_conversation", lambda client, cid, title: client.rename_conversation(cid, title)
+        db, "fetch_conversations", lambda client, vid: client.fetch_conversations(vid)
     )
     monkeypatch.setattr(
-        db, "delete_conversation", lambda client, cid: client.delete_conversation(cid)
+        db,
+        "rename_conversation",
+        lambda client, vid, cid, title: client.rename_conversation(vid, cid, title),
     )
     monkeypatch.setattr(
-        db, "fetch_latest_conversation_id", lambda client: client.fetch_latest_conversation_id()
+        db, "delete_conversation", lambda client, vid, cid: client.delete_conversation(vid, cid)
     )
     monkeypatch.setattr(
-        db, "conversation_exists", lambda client, cid: client.conversation_exists(cid)
+        db,
+        "fetch_latest_conversation_id",
+        lambda client, vid: client.fetch_latest_conversation_id(vid),
+    )
+    monkeypatch.setattr(
+        db, "conversation_exists", lambda client, vid, cid: client.conversation_exists(vid, cid)
     )
     monkeypatch.setattr(db, "fetch_messages", lambda client, cid: client.fetch_messages(cid))
     monkeypatch.setattr(
@@ -147,13 +169,13 @@ def make_client(fake_db: FakeDb, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(
         db,
         "insert_exchange_with_steps",
-        lambda client, cid, user, reply, steps: client.insert_exchange_with_steps(
-            cid, user, reply, steps
+        lambda client, vid, cid, user, reply, steps: client.insert_exchange_with_steps(
+            vid, cid, user, reply, steps
         ),
     )
     app.dependency_overrides[get_db_client] = lambda: fake_db
     app.dependency_overrides[get_claude_client] = lambda: FakeClaudeClient()
-    return TestClient(app)
+    return TestClient(app, headers={"X-Visitor-Id": VISITOR_ID})
 
 
 def test_remembers_fact_and_recalls_it_in_later_conversation(monkeypatch):
@@ -180,15 +202,24 @@ def test_remembers_fact_and_recalls_it_in_later_conversation(monkeypatch):
         requests.append(kwargs)
         return responses.pop(0)
 
-    llm_client = SimpleNamespace(messages=SimpleNamespace(
-        create=create, stream=lambda **kwargs: FakeMessageStream(create(**kwargs)),
-    ))
+    llm_client = SimpleNamespace(
+        messages=SimpleNamespace(
+            create=create,
+            stream=lambda **kwargs: FakeMessageStream(create(**kwargs)),
+        )
+    )
     app.dependency_overrides[get_claude_client] = lambda: llm_client
 
     first = client.post("/api/messages", json={"content": "I prefer Python."})
 
     assert first.status_code == 200
-    assert fake_db.memories == [{"fact": "The user prefers Python.", "embedding": None}]
+    assert fake_db.memories == [
+        {
+            "visitor_id": VISITOR_ID,
+            "fact": "The user prefers Python.",
+            "embedding": None,
+        }
+    ]
     assert requests[0]["system"] == agent.SYSTEM_PROMPT
     assert all(step["kind"] != "memory" for step in first.json()["reply"]["steps"])
 
@@ -296,6 +327,7 @@ def test_list_messages_attaches_stored_steps(
 ) -> None:
     fake_db = FakeDb()
     conversation_id, _, _, first_steps = fake_db.insert_exchange_with_steps(
+        VISITOR_ID,
         None,
         "Hello",
         "First answer",
@@ -306,6 +338,7 @@ def test_list_messages_attaches_stored_steps(
         ],
     )
     _, _, _, second_steps = fake_db.insert_exchange_with_steps(
+        VISITOR_ID,
         conversation_id,
         "Again",
         "Second answer",
@@ -330,13 +363,16 @@ def test_list_conversations_newest_first(monkeypatch: pytest.MonkeyPatch) -> Non
     fake_db = FakeDb()
     client = make_client(fake_db, monkeypatch)
     assert client.get("/api/conversations").json() == []
-    fake_db.insert_exchange_with_steps(None, "  First\n conversation  ", "Answer", [])
-    fake_db.insert_exchange_with_steps(None, "", "Answer", [])
+    fake_db.insert_exchange_with_steps(VISITOR_ID, None, "  First\n conversation  ", "Answer", [])
+    fake_db.insert_exchange_with_steps(VISITOR_ID, None, "", "Answer", [])
 
     response = client.get("/api/conversations")
 
     assert response.status_code == 200
-    assert response.json() == fake_db.conversations[::-1]
+    assert response.json() == [
+        {key: value for key, value in row.items() if key != "visitor_id"}
+        for row in fake_db.conversations[::-1]
+    ]
     assert response.json()[0]["title"] is None
     assert response.json()[1]["title"] == "First conversation"
 
@@ -346,13 +382,15 @@ def test_list_messages_scoped_to_conversation(
     monkeypatch: pytest.MonkeyPatch, explicit: bool
 ) -> None:
     fake_db = FakeDb()
-    first_id, _, _, _ = fake_db.insert_exchange_with_steps(None, "First", "First reply", [])
-    latest_id, _, _, _ = fake_db.insert_exchange_with_steps(None, "Second", "Second reply", [])
+    first_id, _, _, _ = fake_db.insert_exchange_with_steps(
+        VISITOR_ID, None, "First", "First reply", []
+    )
+    latest_id, _, _, _ = fake_db.insert_exchange_with_steps(
+        VISITOR_ID, None, "Second", "Second reply", []
+    )
     client = make_client(fake_db, monkeypatch)
 
-    response = client.get(
-        "/api/messages", params={"conversation_id": first_id} if explicit else {}
-    )
+    response = client.get("/api/messages", params={"conversation_id": first_id} if explicit else {})
 
     assert response.status_code == 200
     selected_id = first_id if explicit else latest_id
@@ -390,8 +428,10 @@ def test_send_message_uses_only_selected_history(
     monkeypatch: pytest.MonkeyPatch, existing: bool
 ) -> None:
     fake_db = FakeDb()
-    selected_id, _, _, _ = fake_db.insert_exchange_with_steps(None, "Selected", "Reply", [])
-    fake_db.insert_exchange_with_steps(None, "Unrelated", "Private reply", [])
+    selected_id, _, _, _ = fake_db.insert_exchange_with_steps(
+        VISITOR_ID, None, "Selected", "Reply", []
+    )
+    fake_db.insert_exchange_with_steps(VISITOR_ID, None, "Unrelated", "Private reply", [])
     client = make_client(fake_db, monkeypatch)
     run_turn = Mock(return_value=agent.TurnResult("New reply", []))
     monkeypatch.setattr(agent, "run_turn", run_turn)
@@ -413,24 +453,29 @@ def test_send_message_uses_only_selected_history(
     assert fake_db.conversations[0]["title"] == "Selected"
 
 
-@pytest.mark.parametrize("title, expected", [
-    ("Renamed", "Renamed"),
-    ("  A pasted\n\t title   here  ", "A pasted title here"),
-    ("x" * 200, "x" * 200),
-    ("  " + "x" * 200 + "\n", "x" * 200),
-])
-def test_rename_conversation(
-    monkeypatch: pytest.MonkeyPatch, title: str, expected: str
-) -> None:
+@pytest.mark.parametrize(
+    "title, expected",
+    [
+        ("Renamed", "Renamed"),
+        ("  A pasted\n\t title   here  ", "A pasted title here"),
+        ("x" * 200, "x" * 200),
+        ("  " + "x" * 200 + "\n", "x" * 200),
+    ],
+)
+def test_rename_conversation(monkeypatch: pytest.MonkeyPatch, title: str, expected: str) -> None:
     fake_db = FakeDb()
-    conversation_id, _, _, _ = fake_db.insert_exchange_with_steps(None, "Original", "Reply", [])
+    conversation_id, _, _, _ = fake_db.insert_exchange_with_steps(
+        VISITOR_ID, None, "Original", "Reply", []
+    )
     client = make_client(fake_db, monkeypatch)
 
     response = client.patch(f"/api/conversations/{conversation_id}", json={"title": title})
 
     assert response.status_code == 200
     assert response.json() == {
-        "id": conversation_id, "title": expected, "created_at": "2026-01-01T00:00:00Z",
+        "id": conversation_id,
+        "title": expected,
+        "created_at": "2026-01-01T00:00:00Z",
     }
     assert client.get("/api/conversations").json()[0]["title"] == expected
 
@@ -440,7 +485,9 @@ def test_rename_conversation_rejects_invalid_title(
     monkeypatch: pytest.MonkeyPatch, title: str
 ) -> None:
     fake_db = FakeDb()
-    conversation_id, _, _, _ = fake_db.insert_exchange_with_steps(None, "Original", "Reply", [])
+    conversation_id, _, _, _ = fake_db.insert_exchange_with_steps(
+        VISITOR_ID, None, "Original", "Reply", []
+    )
     client = make_client(fake_db, monkeypatch)
 
     response = client.patch(f"/api/conversations/{conversation_id}", json={"title": title})
@@ -451,8 +498,10 @@ def test_rename_conversation_rejects_invalid_title(
 
 def test_delete_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_db = FakeDb()
-    conversation_id, _, _, _ = fake_db.insert_exchange_with_steps(None, "Original", "Reply", [])
-    fake_db.insert_exchange_with_steps(None, "Keep", "Reply", [])
+    conversation_id, _, _, _ = fake_db.insert_exchange_with_steps(
+        VISITOR_ID, None, "Original", "Reply", []
+    )
+    fake_db.insert_exchange_with_steps(VISITOR_ID, None, "Keep", "Reply", [])
     client = make_client(fake_db, monkeypatch)
 
     response = client.delete(f"/api/conversations/{conversation_id}")
@@ -486,11 +535,15 @@ def test_cors_allows_patch() -> None:
     assert "PATCH" in middleware.kwargs["allow_methods"]
     client = TestClient(app)
 
-    response = client.options("/api/conversations", headers={
-        "Origin": middleware.kwargs["allow_origins"][0],
-        "Access-Control-Request-Method": "PATCH",
-        "Access-Control-Request-Headers": "content-type",
-    })
+    response = client.options(
+        "/api/conversations",
+        headers={
+            "Origin": middleware.kwargs["allow_origins"][0],
+            "Access-Control-Request-Method": "PATCH",
+            "Access-Control-Request-Headers": "content-type,x-visitor-id",
+        },
+    )
 
     assert response.status_code == 200
     assert "PATCH" in response.headers["access-control-allow-methods"]
+    assert "x-visitor-id" in response.headers["access-control-allow-headers"].lower()

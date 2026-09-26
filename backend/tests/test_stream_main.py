@@ -4,6 +4,7 @@ from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
+from conftest import VISITOR_ID
 from test_main import FakeDb, make_client
 
 from app import agent, db
@@ -55,9 +56,13 @@ def test_stream_unknown_conversation_rejected_before_turn(monkeypatch: pytest.Mo
     stream_turn = Mock()
     monkeypatch.setattr(agent, "stream_turn", stream_turn)
 
-    response = client.post("/api/messages/stream", json={
-        "content": "Hello", "conversation_id": str(uuid4()),
-    })
+    response = client.post(
+        "/api/messages/stream",
+        json={
+            "content": "Hello",
+            "conversation_id": str(uuid4()),
+        },
+    )
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Conversation not found."}
@@ -109,8 +114,10 @@ def test_stream_save_failure_emits_error_without_done(monkeypatch: pytest.Monkey
 @pytest.mark.parametrize("existing", [False, True])
 def test_stream_uses_selected_history(monkeypatch: pytest.MonkeyPatch, existing: bool) -> None:
     fake_db = FakeDb()
-    selected_id, _, _, _ = fake_db.insert_exchange_with_steps(None, "Selected", "Reply", [])
-    fake_db.insert_exchange_with_steps(None, "Unrelated", "Private reply", [])
+    selected_id, _, _, _ = fake_db.insert_exchange_with_steps(
+        VISITOR_ID, None, "Selected", "Reply", []
+    )
+    fake_db.insert_exchange_with_steps(VISITOR_ID, None, "Unrelated", "Private reply", [])
     client = make_client(fake_db, monkeypatch)
     stream_turn = Mock(return_value=iter([agent.TurnComplete(agent.TurnResult("Done"))]))
     monkeypatch.setattr(agent, "stream_turn", stream_turn)

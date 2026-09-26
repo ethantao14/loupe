@@ -9,6 +9,7 @@ plans, tool calls, results and recalled memories so you can inspect how it reach
 - Reads web pages with `fetch_url` and runs Python in Docker with `run_python`.
 - Stores facts with `remember`, recalls them in later turns, and lets you delete them.
 - Records tool failures and blocks identical failed calls from running again in the same turn.
+- Gives each browser its own private space for conversations and remembered facts.
 - Holds separate conversations, with a sidebar to switch between, rename and delete them.
 
 <!-- demo gif goes here -->
@@ -79,6 +80,17 @@ Set `ENABLE_CODE_EXECUTION=false` to turn the tool off.
 Create a Supabase project, then run the SQL files in `backend/migrations/` in numerical
 order in the Supabase SQL editor.
 
+Migration `0009_visitor_isolation.sql` prints an `Existing data visitor ID` notice.
+To claim pre-existing conversations and facts, save that UUID in your browser console
+on the frontend's origin, then reload:
+
+```js
+localStorage.setItem("loupe.visitorId", "UUID_FROM_MIGRATION_NOTICE");
+```
+
+Keep this ID private: it grants access to that browser's space without a login.
+If browser storage is unavailable, the visitor ID is kept only for the page's lifetime.
+
 ### 2. Backend
 
 ```bash
@@ -114,10 +126,10 @@ From `backend/`, install the optional dependencies and explicitly pre-fetch the 
 
 Restart the backend after fetching. Startup warms the model; requests never download it.
 Transformers must stay below version 5. The model requires `trust_remote_code=True`.
-After applying migration `0008_memory_embeddings.sql`, embed existing facts with:
+After applying all migrations, embed a visitor's existing facts using their visitor ID:
 
 ```bash
-.venv/bin/python -m scripts.backfill_embeddings
+.venv/bin/python -m scripts.backfill_embeddings --visitor-id YOUR_VISITOR_UUID
 ```
 
 The backfill only updates facts with null embeddings and can be run again safely.
@@ -127,8 +139,7 @@ New facts receive embeddings when available. Development dependencies in
 ## Checks
 
 The six gates are backend lint, type checking and tests, plus frontend lint, type checking
-and tests. The backend suite contains 275 tests. CI runs it with `-rs` so a skipped test cannot
-be mistaken for a passing one.
+and tests. CI runs backend tests with `-rs` so a skipped test cannot be mistaken for a passing one.
 
 ```bash
 cd backend  && .venv/bin/ruff check . && .venv/bin/mypy app && .venv/bin/pytest
