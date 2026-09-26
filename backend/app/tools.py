@@ -18,6 +18,9 @@ MAX_RESPONSE_BYTES = 2_000_000
 MAX_REDIRECTS = 3
 REQUEST_TIMEOUT_SECONDS = 10
 TOTAL_DEADLINE_SECONDS = 20
+# Sites such as Wikipedia refuse generic library agents, so identify the
+# project with a contact URL, as their bot policies ask.
+USER_AGENT = "Loupe/1.0 (+https://github.com/ethantao14/loupe)"
 
 FETCH_URL_TOOL: ToolParam = {
     "name": "fetch_url",
@@ -241,6 +244,7 @@ def fetch_url(url: str) -> str:
                     headers={
                         "Host": target.host_header,
                         "Accept-Encoding": "identity",
+                        "User-Agent": USER_AGENT,
                     },
                     extensions={"sni_hostname": target.ascii_host},
                 )

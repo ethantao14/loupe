@@ -263,6 +263,20 @@ def test_asks_for_identity_encoding(monkeypatch):
     assert seen["encoding"] == "identity"
 
 
+def test_identifies_itself_with_a_descriptive_user_agent(monkeypatch):
+    seen = {}
+
+    def handler(request):
+        seen["agent"] = request.headers["User-Agent"]
+        return httpx.Response(200, text="<p>ok</p>")
+
+    use_fake_network(monkeypatch, handler)
+    tools.fetch_url("https://example.com")
+
+    assert seen["agent"] == tools.USER_AGENT
+    assert "python-httpx" not in seen["agent"]
+
+
 def test_overlong_hostname_label_is_a_tool_error(memory_store):
     result = tools.run_tool("fetch_url", {"url": f"http://{'a' * 100}.example/"}, memory_store)
 
