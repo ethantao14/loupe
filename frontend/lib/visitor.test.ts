@@ -16,7 +16,7 @@ afterEach(() => {
 
 describe("visitor identity", () => {
   it("creates one UUID, persists it, and reuses it after a reload", async () => {
-    const randomUUID = vi.spyOn(crypto, "randomUUID");
+    const getRandomValues = vi.spyOn(crypto, "getRandomValues");
     const { getVisitorId } = await import("./visitor");
     const id = getVisitorId();
 
@@ -25,17 +25,24 @@ describe("visitor identity", () => {
     expect(window.localStorage.getItem("loupe.visitorId")).toBe(id);
     vi.resetModules();
     expect((await import("./visitor")).getVisitorId()).toBe(id);
-    expect(randomUUID).toHaveBeenCalledTimes(1);
+    expect(getRandomValues).toHaveBeenCalledTimes(1);
+  });
+
+  it("works where crypto.randomUUID is unavailable, as on plain HTTP", async () => {
+    vi.stubGlobal("crypto", { getRandomValues: globalThis.crypto.getRandomValues.bind(globalThis.crypto) });
+    const { getVisitorId } = await import("./visitor");
+
+    expect(getVisitorId()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 
   it("uses a saved identity without generating another", async () => {
     const saved = "12345678-1234-4234-8234-123456789abc";
     window.localStorage.setItem("loupe.visitorId", saved);
-    const randomUUID = vi.spyOn(crypto, "randomUUID");
+    const getRandomValues = vi.spyOn(crypto, "getRandomValues");
     const { getVisitorId } = await import("./visitor");
 
     expect(getVisitorId()).toBe(saved);
-    expect(randomUUID).not.toHaveBeenCalled();
+    expect(getRandomValues).not.toHaveBeenCalled();
   });
 
   it.each(["not-a-uuid", "00000000-0000-0000-0000-000000000000"])(
@@ -61,7 +68,7 @@ describe("visitor identity", () => {
           throw new Error("Storage blocked");
         });
       }
-      const randomUUID = vi.spyOn(crypto, "randomUUID");
+      const getRandomValues = vi.spyOn(crypto, "getRandomValues");
       const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json([])));
       vi.stubGlobal("fetch", fetchMock);
       const { fetchConversations, fetchMessages, fetchMemories } = await import("./api");
@@ -72,7 +79,7 @@ describe("visitor identity", () => {
       await fetchMemories();
 
       const id = getVisitorId();
-      expect(randomUUID).toHaveBeenCalledTimes(1);
+      expect(getRandomValues).toHaveBeenCalledTimes(1);
       for (const [, options] of fetchMock.mock.calls) {
         expect(options.headers).toEqual({ "X-Visitor-Id": id });
       }
