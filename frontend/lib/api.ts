@@ -1,3 +1,5 @@
+import { getVisitorId } from "./visitor";
+
 export type Step = {
   id: string;
   kind: "thinking" | "tool_call" | "tool_result" | "tool_error" | "tool_repeat" | "answer" | "memory";
@@ -35,14 +37,16 @@ async function parseOrThrow(response: Response): Promise<unknown> {
 }
 
 export async function fetchConversations(): Promise<Conversation[]> {
-  const response = await fetch(`${API_BASE}/api/conversations`);
+  const response = await fetch(`${API_BASE}/api/conversations`, {
+    headers: { "X-Visitor-Id": getVisitorId() },
+  });
   return (await parseOrThrow(response)) as Conversation[];
 }
 
 export async function renameConversation(conversationId: string, title: string): Promise<Conversation> {
   const response = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(conversationId)}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Visitor-Id": getVisitorId() },
     body: JSON.stringify({ title }),
   });
   return (await parseOrThrow(response)) as Conversation;
@@ -51,6 +55,7 @@ export async function renameConversation(conversationId: string, title: string):
 export async function deleteConversation(conversationId: string): Promise<void> {
   const response = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(conversationId)}`, {
     method: "DELETE",
+    headers: { "X-Visitor-Id": getVisitorId() },
   });
   if (!response.ok) {
     throw new Error(`Request failed with status ${response.status}`);
@@ -59,18 +64,23 @@ export async function deleteConversation(conversationId: string): Promise<void> 
 
 export async function fetchMessages(conversationId?: string): Promise<Message[]> {
   const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : "";
-  const response = await fetch(`${API_BASE}/api/messages${query}`);
+  const response = await fetch(`${API_BASE}/api/messages${query}`, {
+    headers: { "X-Visitor-Id": getVisitorId() },
+  });
   return (await parseOrThrow(response)) as Message[];
 }
 
 export async function fetchMemories(): Promise<Memory[]> {
-  const response = await fetch(`${API_BASE}/api/memories`);
+  const response = await fetch(`${API_BASE}/api/memories`, {
+    headers: { "X-Visitor-Id": getVisitorId() },
+  });
   return (await parseOrThrow(response)) as Memory[];
 }
 
 export async function deleteMemory(memoryId: string): Promise<void> {
   const response = await fetch(`${API_BASE}/api/memories/${encodeURIComponent(memoryId)}`, {
     method: "DELETE",
+    headers: { "X-Visitor-Id": getVisitorId() },
   });
   if (!response.ok) {
     throw new Error(`Request failed with status ${response.status}`);
@@ -86,7 +96,7 @@ export type SendResult = {
 export async function sendMessage(content: string, conversationId?: string): Promise<SendResult> {
   const response = await fetch(`${API_BASE}/api/messages`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Visitor-Id": getVisitorId() },
     body: JSON.stringify({ content, conversation_id: conversationId }),
   });
   return (await parseOrThrow(response)) as SendResult;
@@ -178,7 +188,7 @@ export async function streamMessage(
 ): Promise<void> {
   const response = await fetch(`${API_BASE}/api/messages/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Visitor-Id": getVisitorId() },
     body: JSON.stringify({ content, conversation_id: conversationId }),
   });
   if (!response.ok) {

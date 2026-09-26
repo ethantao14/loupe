@@ -16,17 +16,27 @@ def get_client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
-def insert_memory(client: Client, fact: str, embedding: list[float] | None = None) -> dict:
-    response = client.rpc("insert_memory", {"fact": fact, "embedding": embedding}).execute()
+def insert_memory(
+    client: Client, visitor_id: str, fact: str, embedding: list[float] | None = None
+) -> dict:
+    response = client.rpc(
+        "insert_memory", {"visitor": visitor_id, "fact": fact, "embedding": embedding}
+    ).execute()
     return cast(dict, response.data)
 
 
-def delete_memory(client: Client, memory_id: str) -> bool:
-    response = client.table(MEMORIES_TABLE).delete().eq("id", memory_id).execute()
+def delete_memory(client: Client, visitor_id: str, memory_id: str) -> bool:
+    response = (
+        client.table(MEMORIES_TABLE)
+        .delete()
+        .eq("visitor_id", visitor_id)
+        .eq("id", memory_id)
+        .execute()
+    )
     return bool(response.data)
 
 
-def fetch_memories(client: Client, limit: int | None = None) -> list[dict]:
+def fetch_memories(client: Client, visitor_id: str, limit: int | None = None) -> list[dict]:
     """Read facts newest first, optionally stopping at the requested limit."""
     memories: list[dict] = []
     while limit is None or len(memories) < limit:
@@ -34,6 +44,7 @@ def fetch_memories(client: Client, limit: int | None = None) -> list[dict]:
         response = (
             client.table(MEMORIES_TABLE)
             .select("*")
+            .eq("visitor_id", visitor_id)
             .order("seq", desc=True)
             .range(len(memories), len(memories) + page_size - 1)
             .execute()
@@ -45,12 +56,13 @@ def fetch_memories(client: Client, limit: int | None = None) -> list[dict]:
     return memories
 
 
-def fetch_conversations(client: Client) -> list[dict]:
+def fetch_conversations(client: Client, visitor_id: str) -> list[dict]:
     conversations: list[dict] = []
     while True:
         response = (
             client.table(CONVERSATIONS_TABLE)
             .select("*")
+            .eq("visitor_id", visitor_id)
             .order("seq", desc=True)
             .range(len(conversations), len(conversations) + PAGE_SIZE - 1)
             .execute()
@@ -61,11 +73,14 @@ def fetch_conversations(client: Client) -> list[dict]:
             return conversations
 
 
-def rename_conversation(client: Client, conversation_id: str, title: str) -> dict | None:
+def rename_conversation(
+    client: Client, visitor_id: str, conversation_id: str, title: str
+) -> dict | None:
     """Returns the updated conversation, or None when there was no such row."""
     response = (
         client.table(CONVERSATIONS_TABLE)
         .update({"title": title})
+        .eq("visitor_id", visitor_id)
         .eq("id", conversation_id)
         .execute()
     )
@@ -73,15 +88,22 @@ def rename_conversation(client: Client, conversation_id: str, title: str) -> dic
     return updated[0] if updated else None
 
 
-def delete_conversation(client: Client, conversation_id: str) -> bool:
-    response = client.table(CONVERSATIONS_TABLE).delete().eq("id", conversation_id).execute()
+def delete_conversation(client: Client, visitor_id: str, conversation_id: str) -> bool:
+    response = (
+        client.table(CONVERSATIONS_TABLE)
+        .delete()
+        .eq("visitor_id", visitor_id)
+        .eq("id", conversation_id)
+        .execute()
+    )
     return bool(response.data)
 
 
-def fetch_latest_conversation_id(client: Client) -> str | None:
+def fetch_latest_conversation_id(client: Client, visitor_id: str) -> str | None:
     response = (
         client.table(CONVERSATIONS_TABLE)
         .select("id")
+        .eq("visitor_id", visitor_id)
         .order("seq", desc=True)
         .limit(1)
         .execute()
@@ -90,10 +112,11 @@ def fetch_latest_conversation_id(client: Client) -> str | None:
     return conversations[0]["id"] if conversations else None
 
 
-def conversation_exists(client: Client, conversation_id: str) -> bool:
+def conversation_exists(client: Client, visitor_id: str, conversation_id: str) -> bool:
     response = (
         client.table(CONVERSATIONS_TABLE)
         .select("id")
+        .eq("visitor_id", visitor_id)
         .eq("id", conversation_id)
         .limit(1)
         .execute()
@@ -144,6 +167,7 @@ def fetch_steps(client: Client, message_ids: list[str]) -> list[dict]:
 
 def insert_exchange_with_steps(
     client: Client,
+    visitor_id: str,
     conversation_id: str | None,
     user_content: str,
     reply_content: str,
@@ -152,6 +176,7 @@ def insert_exchange_with_steps(
     response = client.rpc(
         "insert_exchange_with_steps",
         {
+            "visitor": visitor_id,
             "conversation": conversation_id,
             "user_content": user_content,
             "reply_content": reply_content,
@@ -160,3 +185,17 @@ def insert_exchange_with_steps(
     ).execute()
     exchange = cast(dict, response.data)
     return exchange["conversation_id"], exchange["user"], exchange["reply"], exchange["steps"]
+
+
+def update_memory_embedding(
+    client: Client, visitor_id: str, memory_id: str, vector: list[float]
+) -> bool:
+    response = (
+        client.table(MEMORIES_TABLE)
+        .update({"embedding": vector})
+        .eq("visitor_id", visitor_id)
+        .eq("id", memory_id)
+        .is_("embedding", "null")
+        .execute()
+    )
+    return bool(response.data)

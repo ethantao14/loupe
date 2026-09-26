@@ -2,6 +2,7 @@ from copy import deepcopy
 from unittest.mock import Mock
 
 import pytest
+from conftest import VISITOR_ID
 from stream_helpers import FakeMessageStream
 from supabase import Client
 
@@ -238,7 +239,7 @@ def test_current_user_query_selects_older_relevant_fact(monkeypatch):
         {"role": "user", "content": "Python"},
     ]
 
-    result = agent.run_turn(client, history, MemoryStore(Mock(spec=Client)))
+    result = agent.run_turn(client, history, MemoryStore(Mock(spec=Client), VISITOR_ID))
 
     detail = result.steps[0].detail
     assert result.steps[0].kind == "memory"
@@ -263,7 +264,7 @@ def test_recency_fallback_explained_in_trace(monkeypatch, history, reason):
     monkeypatch.setattr(db, "fetch_memories", Mock(return_value=[{"fact": f} for f in facts]))
     client = ScriptedClient([text_response("Hello")])
 
-    result = agent.run_turn(client, history, MemoryStore(Mock(spec=Client)))
+    result = agent.run_turn(client, history, MemoryStore(Mock(spec=Client), VISITOR_ID))
 
     assert result.steps[0] == agent.Step(
         kind="memory",
@@ -333,12 +334,22 @@ def test_python_trace_describes_confinement_only_when_enabled(monkeypatch, memor
     monkeypatch.setattr(
         tools, "run_tool", Mock(return_value=tools.ToolOutcome("4\n", failed=False))
     )
-    client = ScriptedClient([
-        Response("tool_use", [Block(
-            "tool_use", name="run_python", block_id="tu_python", tool_input={"code": "print(4)"},
-        )]),
-        text_response("4"),
-    ])
+    client = ScriptedClient(
+        [
+            Response(
+                "tool_use",
+                [
+                    Block(
+                        "tool_use",
+                        name="run_python",
+                        block_id="tu_python",
+                        tool_input={"code": "print(4)"},
+                    )
+                ],
+            ),
+            text_response("4"),
+        ]
+    )
 
     result = agent.run_turn(client, [{"role": "user", "content": "Run Python"}], memory_store)
 
@@ -357,8 +368,6 @@ def test_dense_trace_records_contributors_and_query_failure() -> None:
     assert "Selected 1 of 3 candidates" in detail
     assert "Rankers: bm25, dense" in detail
     assert "- 0.020 | A corgi" in detail
-    fallback = RecallResult(
-        [("A corgi", 1.0)], 3, "Dense recall failed: out of memory", ("bm25",)
-    )
+    fallback = RecallResult([("A corgi", 1.0)], 3, "Dense recall failed: out of memory", ("bm25",))
     detail = agent._memory_detail(fallback)
     assert "Rankers: bm25; Fallback: Dense recall failed: out of memory" in detail

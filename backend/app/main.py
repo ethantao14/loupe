@@ -7,7 +7,7 @@ from dataclasses import asdict
 from uuid import UUID
 
 from anthropic import Anthropic
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
@@ -94,6 +94,16 @@ def _with_steps(messages: list[dict], steps: list[dict]) -> list[dict]:
     return [{**message, "steps": by_message.get(message["id"], [])} for message in messages]
 
 
+def get_visitor_id(x_visitor_id: str | None = Header(default=None)) -> str:
+    try:
+        visitor_id = UUID(x_visitor_id) if x_visitor_id is not None else None
+    except ValueError:
+        visitor_id = None
+    if visitor_id is None or visitor_id.int == 0:
+        raise HTTPException(status_code=400, detail="X-Visitor-Id must be a valid, non-nil UUID.")
+    return str(visitor_id)
+
+
 def get_db_client() -> Client:
     return db.get_client()
 
@@ -103,20 +113,30 @@ def get_claude_client() -> Anthropic:
 
 
 @app.get("/api/memories", response_model=list[MemoryOut])
-def list_memories(client: Client = Depends(get_db_client)) -> list[dict]:
-    return db.fetch_memories(client)
+def list_memories(
+    client: Client = Depends(get_db_client),
+    visitor_id: str = Depends(get_visitor_id),
+) -> list[dict]:
+    return db.fetch_memories(client, visitor_id)
 
 
 @app.delete("/api/memories/{memory_id}", status_code=204)
-def forget_memory(memory_id: UUID, client: Client = Depends(get_db_client)) -> Response:
-    if not db.delete_memory(client, str(memory_id)):
+def forget_memory(
+    memory_id: UUID,
+    client: Client = Depends(get_db_client),
+    visitor_id: str = Depends(get_visitor_id),
+) -> Response:
+    if not db.delete_memory(client, visitor_id, str(memory_id)):
         raise HTTPException(status_code=404, detail="Remembered fact not found.")
     return Response(status_code=204)
 
 
 @app.get("/api/conversations", response_model=list[ConversationOut])
-def list_conversations(client: Client = Depends(get_db_client)) -> list[dict]:
-    return db.fetch_conversations(client)
+def list_conversations(
+    client: Client = Depends(get_db_client),
+    visitor_id: str = Depends(get_visitor_id),
+) -> list[dict]:
+    return db.fetch_conversations(client, visitor_id)
 
 
 @app.patch("/api/conversations/{conversation_id}", response_model=ConversationOut)
@@ -124,8 +144,9 @@ def rename_conversation(
     conversation_id: UUID,
     body: ConversationUpdate,
     client: Client = Depends(get_db_client),
+    visitor_id: str = Depends(get_visitor_id),
 ) -> dict:
-    conversation = db.rename_conversation(client, str(conversation_id), body.title)
+    conversation = db.rename_conversation(client, visitor_id, str(conversation_id), body.title)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found.")
     return conversation
@@ -133,24 +154,28 @@ def rename_conversation(
 
 @app.delete("/api/conversations/{conversation_id}", status_code=204)
 def delete_conversation(
-    conversation_id: UUID, client: Client = Depends(get_db_client)
+    conversation_id: UUID,
+    client: Client = Depends(get_db_client),
+    visitor_id: str = Depends(get_visitor_id),
 ) -> Response:
-    if not db.delete_conversation(client, str(conversation_id)):
+    if not db.delete_conversation(client, visitor_id, str(conversation_id)):
         raise HTTPException(status_code=404, detail="Conversation not found.")
     return Response(status_code=204)
 
 
 @app.get("/api/messages", response_model=list[MessageOut])
 def list_messages(
-    conversation_id: UUID | None = None, client: Client = Depends(get_db_client)
+    conversation_id: UUID | None = None,
+    client: Client = Depends(get_db_client),
+    visitor_id: str = Depends(get_visitor_id),
 ) -> list[dict]:
     selected_id: str | None
     if conversation_id is not None:
         selected_id = str(conversation_id)
-        if not db.conversation_exists(client, selected_id):
+        if not db.conversation_exists(client, visitor_id, selected_id):
             raise HTTPException(status_code=404, detail="Conversation not found.")
     else:
-        selected_id = db.fetch_latest_conversation_id(client)
+        selected_id = db.fetch_latest_conversation_id(client, visitor_id)
     if selected_id is None:
         return []
     messages = db.fetch_messages(client, selected_id)
@@ -163,18 +188,22 @@ def send_message(
     body: MessageIn,
     db_client: Client = Depends(get_db_client),
     llm_client: Anthropic = Depends(get_claude_client),
+    visitor_id: str = Depends(get_visitor_id),
 ) -> dict:
     conversation_id = str(body.conversation_id) if body.conversation_id is not None else None
-    if conversation_id is not None and not db.conversation_exists(db_client, conversation_id):
+    if conversation_id is not None and not db.conversation_exists(
+        db_client, visitor_id, conversation_id
+    ):
         raise HTTPException(status_code=404, detail="Conversation not found.")
     # Messages and steps are persisted together after the reply succeeds.
     # Facts saved by remember persist independently of the exchange.
     history = db.fetch_messages(db_client, conversation_id) if conversation_id is not None else []
     pending = [*history, {"role": "user", "content": body.content}]
-    result = agent.run_turn(llm_client, pending, MemoryStore(db_client))
+    result = agent.run_turn(llm_client, pending, MemoryStore(db_client, visitor_id))
 
     conversation_id, user_message, reply, steps = db.insert_exchange_with_steps(
         db_client,
+        visitor_id,
         conversation_id,
         body.content,
         result.reply,
@@ -200,16 +229,19 @@ def stream_message(
     body: MessageIn,
     db_client: Client = Depends(get_db_client),
     llm_client: Anthropic = Depends(get_claude_client),
+    visitor_id: str = Depends(get_visitor_id),
 ) -> StreamingResponse:
     conversation_id = str(body.conversation_id) if body.conversation_id is not None else None
-    if conversation_id is not None and not db.conversation_exists(db_client, conversation_id):
+    if conversation_id is not None and not db.conversation_exists(
+        db_client, visitor_id, conversation_id
+    ):
         raise HTTPException(status_code=404, detail="Conversation not found.")
     history = db.fetch_messages(db_client, conversation_id) if conversation_id is not None else []
     pending = [*history, {"role": "user", "content": body.content}]
 
     def events() -> Iterator[str]:
         try:
-            for event in agent.stream_turn(llm_client, pending, MemoryStore(db_client)):
+            for event in agent.stream_turn(llm_client, pending, MemoryStore(db_client, visitor_id)):
                 if isinstance(event, agent.TextDelta):
                     yield _sse_event("delta", {"text": event.text})
                 elif isinstance(event, agent.StepEvent):
@@ -217,6 +249,7 @@ def stream_message(
                 elif isinstance(event, agent.TurnComplete):
                     saved_id, user, reply, steps = db.insert_exchange_with_steps(
                         db_client,
+                        visitor_id,
                         conversation_id,
                         body.content,
                         event.result.reply,

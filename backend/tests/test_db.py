@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, call
 
 import pytest
+from conftest import VISITOR_ID
 from supabase import Client
 
 from app import db
@@ -32,7 +33,8 @@ def test_fetch_paginates_in_order(table: str, row_count: int) -> None:
         ]
         query.in_.assert_not_called()
     elif table == "conversations":
-        result = db.fetch_conversations(client)
+        result = db.fetch_conversations(client, VISITOR_ID)
+        assert query.eq.call_args_list == [call("visitor_id", VISITOR_ID) for _ in offsets]
     else:
         result = db.fetch_steps(client, ["assistant-id"])
         assert query.in_.call_args_list == [call("message_id", ["assistant-id"]) for _ in offsets]
@@ -63,6 +65,7 @@ def test_fetch_steps_batches_ids_and_paginates_in_order() -> None:
     client = Mock(spec=Client)
     query = client.table.return_value
     query.select.return_value = query
+    query.eq.return_value = query
     query.in_.return_value = query
     query.order.return_value = query
     query.range.return_value = query
@@ -126,12 +129,15 @@ def test_insert_exchange_with_steps_uses_one_rpc(
         }
     )
 
-    result = db.insert_exchange_with_steps(client, conversation_id, "Hi", "Hello!", steps)
+    result = db.insert_exchange_with_steps(
+        client, VISITOR_ID, conversation_id, "Hi", "Hello!", steps
+    )
 
     assert result == ("conversation-id", user, reply, stored_steps)
     client.rpc.assert_called_once_with(
         "insert_exchange_with_steps",
         {
+            "visitor": VISITOR_ID,
             "conversation": conversation_id,
             "user_content": "Hi",
             "reply_content": "Hello!",
@@ -147,7 +153,7 @@ def test_insert_exchange_with_steps_propagates_rpc_failure() -> None:
     client.rpc.return_value.execute.side_effect = RuntimeError("Step insert failed")
 
     with pytest.raises(RuntimeError, match="Step insert failed"):
-        db.insert_exchange_with_steps(client, None, "Hi", "Hello!", [])
+        db.insert_exchange_with_steps(client, VISITOR_ID, None, "Hi", "Hello!", [])
 
     client.rpc.return_value.execute.assert_called_once_with()
     client.table.assert_not_called()
@@ -158,8 +164,10 @@ def test_insert_memory_uses_rpc():
     row = {"id": "memory-id", "seq": 1, "fact": "The user prefers Python."}
     client.rpc.return_value.execute.return_value = SimpleNamespace(data=row)
 
-    assert db.insert_memory(client, row["fact"]) == row
-    client.rpc.assert_called_once_with("insert_memory", {"fact": row["fact"], "embedding": None})
+    assert db.insert_memory(client, VISITOR_ID, row["fact"]) == row
+    client.rpc.assert_called_once_with(
+        "insert_memory", {"visitor": VISITOR_ID, "fact": row["fact"], "embedding": None}
+    )
     client.rpc.return_value.execute.assert_called_once_with()
     client.table.assert_not_called()
 
@@ -169,7 +177,7 @@ def test_insert_memory_propagates_failure():
     client.rpc.return_value.execute.side_effect = RuntimeError("Insert failed")
 
     with pytest.raises(RuntimeError, match="Insert failed"):
-        db.insert_memory(client, "A fact")
+        db.insert_memory(client, VISITOR_ID, "A fact")
 
 
 @pytest.mark.parametrize(
@@ -193,6 +201,7 @@ def test_fetch_memories_paginates_newest_first(row_count, limit, ranges):
     client = Mock(spec=Client)
     query = client.table.return_value
     query.select.return_value = query
+    query.eq.return_value = query
     query.order.return_value = query
     query.range.return_value = query
 
@@ -202,7 +211,8 @@ def test_fetch_memories_paginates_newest_first(row_count, limit, ranges):
 
     query.execute.side_effect = execute
 
-    assert db.fetch_memories(client, limit) == rows[:limit]
+    assert db.fetch_memories(client, VISITOR_ID, limit) == rows[:limit]
+    assert query.eq.call_args_list == [call("visitor_id", VISITOR_ID)] * len(ranges)
     assert client.table.call_args_list == [call("memories")] * len(ranges)
     assert query.select.call_args_list == [call("*")] * len(ranges)
     assert query.order.call_args_list == [call("seq", desc=True)] * len(ranges)
@@ -215,13 +225,15 @@ def test_fetch_latest_conversation_id(conversation_id: str | None) -> None:
     client = Mock(spec=Client)
     query = client.table.return_value
     query.select.return_value = query
+    query.eq.return_value = query
     query.order.return_value = query
     query.limit.return_value = query
     query.execute.return_value = SimpleNamespace(
         data=[] if conversation_id is None else [{"id": conversation_id}]
     )
 
-    assert db.fetch_latest_conversation_id(client) == conversation_id
+    assert db.fetch_latest_conversation_id(client, VISITOR_ID) == conversation_id
+    query.eq.assert_called_once_with("visitor_id", VISITOR_ID)
     client.table.assert_called_once_with("conversations")
     query.select.assert_called_once_with("id")
     query.order.assert_called_once_with("seq", desc=True)
@@ -237,10 +249,10 @@ def test_conversation_exists(exists: bool) -> None:
     query.limit.return_value = query
     query.execute.return_value = SimpleNamespace(data=[{"id": "chat-id"}] if exists else [])
 
-    assert db.conversation_exists(client, "chat-id") is exists
+    assert db.conversation_exists(client, VISITOR_ID, "chat-id") is exists
     client.table.assert_called_once_with("conversations")
     query.select.assert_called_once_with("id")
-    query.eq.assert_called_once_with("id", "chat-id")
+    assert query.eq.call_args_list == [call("visitor_id", VISITOR_ID), call("id", "chat-id")]
     query.limit.assert_called_once_with(1)
 
 
@@ -253,10 +265,12 @@ def test_rename_conversation(exists: bool) -> None:
     row = {"id": "chat-id", "title": "New title", "created_at": "2026-01-01T00:00:00Z"}
     query.execute.return_value = SimpleNamespace(data=[row] if exists else [])
 
-    assert db.rename_conversation(client, "chat-id", "New title") == (row if exists else None)
+    assert db.rename_conversation(client, VISITOR_ID, "chat-id", "New title") == (
+        row if exists else None
+    )
     client.table.assert_called_once_with("conversations")
     query.update.assert_called_once_with({"title": "New title"})
-    query.eq.assert_called_once_with("id", "chat-id")
+    assert query.eq.call_args_list == [call("visitor_id", VISITOR_ID), call("id", "chat-id")]
     query.execute.assert_called_once_with()
 
 
@@ -268,26 +282,29 @@ def test_delete_conversation(exists: bool) -> None:
     query.eq.return_value = query
     query.execute.return_value = SimpleNamespace(data=[{"id": "chat-id"}] if exists else [])
 
-    assert db.delete_conversation(client, "chat-id") is exists
+    assert db.delete_conversation(client, VISITOR_ID, "chat-id") is exists
     client.table.assert_called_once_with("conversations")
     query.delete.assert_called_once_with()
-    query.eq.assert_called_once_with("id", "chat-id")
+    assert query.eq.call_args_list == [call("visitor_id", VISITOR_ID), call("id", "chat-id")]
     query.execute.assert_called_once_with()
 
 
 def test_insert_memory_passes_embedding_to_rpc() -> None:
     client = Mock(spec=Client)
     vector = [1.0, 0.0]
-    db.insert_memory(client, "A corgi", vector)
-    client.rpc.assert_called_once_with("insert_memory", {"fact": "A corgi", "embedding": vector})
+    db.insert_memory(client, VISITOR_ID, "A corgi", vector)
+    client.rpc.assert_called_once_with(
+        "insert_memory", {"visitor": VISITOR_ID, "fact": "A corgi", "embedding": vector}
+    )
 
 
 def test_fetch_memories_keeps_embeddings() -> None:
     client = Mock(spec=Client)
     query = client.table.return_value
     query.select.return_value = query
+    query.eq.return_value = query
     query.order.return_value = query
     query.range.return_value = query
     rows = [{"fact": "A corgi", "embedding": [1.0, 0.0]}]
     query.execute.return_value = SimpleNamespace(data=rows)
-    assert db.fetch_memories(client) == rows
+    assert db.fetch_memories(client, VISITOR_ID) == rows

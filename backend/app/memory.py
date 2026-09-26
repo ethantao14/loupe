@@ -19,8 +19,9 @@ class RecallResult:
 
 
 class MemoryStore:
-    def __init__(self, client: Client) -> None:
+    def __init__(self, client: Client, visitor_id: str) -> None:
         self.client = client
+        self.visitor_id = visitor_id
 
     def remember(self, fact: str) -> None:
         vector: list[float] | None = None
@@ -29,16 +30,16 @@ class MemoryStore:
                 vector = embedding.encode_documents([fact])[0]
             except Exception:
                 logging.getLogger(__name__).exception("Could not embed memory; storing fact alone")
-        db.insert_memory(self.client, fact, vector)
+        db.insert_memory(self.client, self.visitor_id, fact, vector)
 
     def recall(self, limit: int) -> list[str]:
-        return [memory["fact"] for memory in db.fetch_memories(self.client, limit)]
+        return [memory["fact"] for memory in db.fetch_memories(self.client, self.visitor_id, limit)]
 
     def recall_relevant(self, query: str | None, limit: int = RECALL_TOP_K) -> RecallResult:
         """Rank the newest candidate facts, falling back to recency for zero matches."""
         if limit <= 0:
             return RecallResult([], 0)
-        memories = db.fetch_memories(self.client, MAX_MEMORY_CANDIDATES)
+        memories = db.fetch_memories(self.client, self.visitor_id, MAX_MEMORY_CANDIDATES)
         facts = [memory["fact"] for memory in memories]
         if not query or not tokenize(query):
             return RecallResult(
@@ -69,6 +70,4 @@ class MemoryStore:
         reason = "no matching terms"
         if fallback_reason:
             reason = f"{fallback_reason}; {reason}"
-        return RecallResult(
-            [(fact, 0.0) for fact in facts[:limit]], len(facts), reason, ("bm25",)
-        )
+        return RecallResult([(fact, 0.0) for fact in facts[:limit]], len(facts), reason, ("bm25",))
