@@ -13,7 +13,8 @@ from app import config, confine
 from app.memory import MemoryStore
 from app.sandbox import run_python
 
-MAX_CONTENT_CHARS = 4000
+# About 3,000 tokens: enough to reach the body of a typical article.
+MAX_CONTENT_CHARS = 12_000
 MAX_RESPONSE_BYTES = 2_000_000
 MAX_REDIRECTS = 3
 REQUEST_TIMEOUT_SECONDS = 10
@@ -197,7 +198,9 @@ class _TextExtractor(HTMLParser):
     """Collects visible text. A parser rather than a regex, because regex tag
     stripping degrades badly on hostile markup."""
 
-    SKIPPED_TAGS = {"script", "style"}
+    # Page chrome is skipped too, or menus fill the character budget before
+    # the article begins, as they do on Wikipedia.
+    SKIPPED_TAGS = {"script", "style", "noscript", "nav", "header", "footer", "aside"}
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)

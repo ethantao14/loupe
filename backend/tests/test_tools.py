@@ -32,6 +32,19 @@ def test_extracts_visible_text_only():
     assert "color: red" not in text
 
 
+def test_skips_page_chrome_around_the_content():
+    document = """
+    <body><header>Site logo</header><nav>Main menu</nav>
+    <main><h1>Article</h1><p>The part worth reading.</p></main>
+    <aside>Related links</aside><footer>Copyright</footer>
+    <noscript>Enable JavaScript</noscript></body>
+    """
+
+    text = tools._extract_text(document)
+
+    assert text == "Article The part worth reading."
+
+
 def test_rejects_non_http_scheme(memory_store):
     result = tools.run_tool("fetch_url", {"url": "file:///etc/passwd"}, memory_store)
 
