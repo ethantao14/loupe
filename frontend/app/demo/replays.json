@@ -1,0 +1,852 @@
+[
+  {
+    "id": "memory-and-fetch",
+    "question": "How much exercise does my dog need? Look it up on https://en.wikipedia.org/wiki/Pembroke_Welsh_Corgi and keep it short.",
+    "events": [
+      {
+        "at_ms": 276,
+        "event": "step",
+        "data": {
+          "kind": "memory",
+          "detail": "Selected 1 of 1 candidates\nRankers: bm25, dense; voyageai/voyage-4-nano: 256 dimensions, mean pooling including prompt, L2 normalised\n- 0.033 | The user has a corgi named Biscuit.",
+          "tool_name": null
+        }
+      },
+      {
+        "at_ms": 3315,
+        "event": "step",
+        "data": {
+          "kind": "tool_call",
+          "detail": "{'url': 'https://en.wikipedia.org/wiki/Pembroke_Welsh_Corgi'}",
+          "tool_name": "fetch_url"
+        }
+      },
+      {
+        "at_ms": 3558,
+        "event": "step",
+        "data": {
+          "kind": "tool_result",
+          "detail": "Pembroke Welsh Corgi - Wikipedia Jump to content From Wikipedia, the free encyclopedia Dog breed Pembroke Welsh Corgi Common nicknames Corgi, Welsh Corgi, Pembroke Origin Wales Traits Height Males 10\u201312 in (25\u201330 cm) Females 10\u201312 in (25\u201330 cm) Weight Males 24\u201331 lb (11\u201314 kg) Females 24\u201328 lb (11\u201313 kg) Coat Medium length, thick, weather-resist double coat Color Fawn, Black & Tan, Black & White, Red, Sable Kennel club standards The Kennel Club standard F\u00e9d\u00e9ration Cynologique Internationale standard Dog ( domestic dog ) Sable Pembroke Welsh Corgi puppy (6 weeks old) The Pembroke Welsh Corgi ( / \u02c8 k \u0254\u02d0r \u0261 i / ; Welsh for \"dwarf dog\" [ a ] ) is a cattle herding dog breed that originated in Pembrokeshire , Wales . [ 1 ] The name Corgi is of Welsh origin , and is a compound of the words cor and ci ( mutated to gi ), meaning \"dwarf\" and \"dog\", respectively. [ a ] It is one of two breeds known as a Welsh Corgi , the other being the Cardigan Welsh Corgi . Pembroke Welsh Corgis are descended from the Spitz family of dog. Pembroke Welsh Corgis are famous as the preferred breed of Queen Elizabeth II , who owned more than 30 Royal corgis during her reign. [ 2 ] Although these dogs have been favoured by British royalty for more than seventy years, among the British public they have recently fallen into decline in terms of popularity and demand. [ 3 ] However, they remain very popular in the United States. Cities such as New York, Boston, Los Angeles, and San Francisco hold annual \"Corgi Meetups\" in which hundreds of dogs and their owners congregate to spend the day. [ 4 ] The Pembroke Welsh Corgi has been ranked 11th in Stanley Coren 's The Intelligence of Dogs , which states that the breed is considered an excellent working dog. Pembroke Welsh Corgis were ranked 11th most popular breed of dog in 2020 according to the American Kennel Club. [ 5 ] Description [ edit ] Appearance [ edit ] Pembroke Welsh Corgis differ from the Cardigan Welsh Corgi by being shorter in... [truncated]",
+          "tool_name": "fetch_url"
+        }
+      },
+      {
+        "at_ms": 5025,
+        "event": "delta",
+        "data": {
+          "text": "Based"
+        }
+      },
+      {
+        "at_ms": 5276,
+        "event": "delta",
+        "data": {
+          "text": " on the"
+        }
+      },
+      {
+        "at_ms": 5277,
+        "event": "delta",
+        "data": {
+          "text": " Wikipedia"
+        }
+      },
+      {
+        "at_ms": 5277,
+        "event": "delta",
+        "data": {
+          "text": " article about"
+        }
+      },
+      {
+        "at_ms": 5277,
+        "event": "delta",
+        "data": {
+          "text": " Pembroke Welsh"
+        }
+      },
+      {
+        "at_ms": 5277,
+        "event": "delta",
+        "data": {
+          "text": " C"
+        }
+      },
+      {
+        "at_ms": 5278,
+        "event": "delta",
+        "data": {
+          "text": "orgis,"
+        }
+      },
+      {
+        "at_ms": 5278,
+        "event": "delta",
+        "data": {
+          "text": " B"
+        }
+      },
+      {
+        "at_ms": 5278,
+        "event": "delta",
+        "data": {
+          "text": "isc"
+        }
+      },
+      {
+        "at_ms": 5291,
+        "event": "delta",
+        "data": {
+          "text": "uit needs"
+        }
+      },
+      {
+        "at_ms": 5318,
+        "event": "delta",
+        "data": {
+          "text": " regular"
+        }
+      },
+      {
+        "at_ms": 5348,
+        "event": "delta",
+        "data": {
+          "text": " exercise."
+        }
+      },
+      {
+        "at_ms": 5370,
+        "event": "delta",
+        "data": {
+          "text": " The"
+        }
+      },
+      {
+        "at_ms": 5500,
+        "event": "delta",
+        "data": {
+          "text": " article notes"
+        }
+      },
+      {
+        "at_ms": 5501,
+        "event": "delta",
+        "data": {
+          "text": " that c"
+        }
+      },
+      {
+        "at_ms": 5501,
+        "event": "delta",
+        "data": {
+          "text": "orgis have"
+        }
+      },
+      {
+        "at_ms": 5502,
+        "event": "delta",
+        "data": {
+          "text": " \"a need"
+        }
+      },
+      {
+        "at_ms": 5503,
+        "event": "delta",
+        "data": {
+          "text": " for exercise"
+        }
+      },
+      {
+        "at_ms": 5530,
+        "event": "delta",
+        "data": {
+          "text": ","
+        }
+      },
+      {
+        "at_ms": 5556,
+        "event": "delta",
+        "data": {
+          "text": " as"
+        }
+      },
+      {
+        "at_ms": 5581,
+        "event": "delta",
+        "data": {
+          "text": " they can"
+        }
+      },
+      {
+        "at_ms": 5608,
+        "event": "delta",
+        "data": {
+          "text": " easily"
+        }
+      },
+      {
+        "at_ms": 5636,
+        "event": "delta",
+        "data": {
+          "text": " become over"
+        }
+      },
+      {
+        "at_ms": 5662,
+        "event": "delta",
+        "data": {
+          "text": "weight.\""
+        }
+      },
+      {
+        "at_ms": 5689,
+        "event": "delta",
+        "data": {
+          "text": " It"
+        }
+      },
+      {
+        "at_ms": 5728,
+        "event": "delta",
+        "data": {
+          "text": " also mentions they"
+        }
+      },
+      {
+        "at_ms": 5738,
+        "event": "delta",
+        "data": {
+          "text": " \""
+        }
+      },
+      {
+        "at_ms": 5768,
+        "event": "delta",
+        "data": {
+          "text": "love"
+        }
+      },
+      {
+        "at_ms": 5791,
+        "event": "delta",
+        "data": {
+          "text": " to run around"
+        }
+      },
+      {
+        "at_ms": 5819,
+        "event": "delta",
+        "data": {
+          "text": "\" and need"
+        }
+      },
+      {
+        "at_ms": 5851,
+        "event": "delta",
+        "data": {
+          "text": " mental"
+        }
+      },
+      {
+        "at_ms": 5875,
+        "event": "delta",
+        "data": {
+          "text": " stimulation to"
+        }
+      },
+      {
+        "at_ms": 5899,
+        "event": "delta",
+        "data": {
+          "text": " prevent behavioral"
+        }
+      },
+      {
+        "at_ms": 5924,
+        "event": "delta",
+        "data": {
+          "text": " issues from"
+        }
+      },
+      {
+        "at_ms": 5951,
+        "event": "delta",
+        "data": {
+          "text": " b"
+        }
+      },
+      {
+        "at_ms": 5977,
+        "event": "delta",
+        "data": {
+          "text": "oredom."
+        }
+      },
+      {
+        "at_ms": 6004,
+        "event": "delta",
+        "data": {
+          "text": "\n\nWhile"
+        }
+      },
+      {
+        "at_ms": 6030,
+        "event": "delta",
+        "data": {
+          "text": " a"
+        }
+      },
+      {
+        "at_ms": 6054,
+        "event": "delta",
+        "data": {
+          "text": " specific"
+        }
+      },
+      {
+        "at_ms": 6081,
+        "event": "delta",
+        "data": {
+          "text": " duration"
+        }
+      },
+      {
+        "at_ms": 6107,
+        "event": "delta",
+        "data": {
+          "text": " isn't stated"
+        }
+      },
+      {
+        "at_ms": 6135,
+        "event": "delta",
+        "data": {
+          "text": ","
+        }
+      },
+      {
+        "at_ms": 6160,
+        "event": "delta",
+        "data": {
+          "text": " c"
+        }
+      },
+      {
+        "at_ms": 6186,
+        "event": "delta",
+        "data": {
+          "text": "orgis are"
+        }
+      },
+      {
+        "at_ms": 6213,
+        "event": "delta",
+        "data": {
+          "text": " described as active"
+        }
+      },
+      {
+        "at_ms": 6246,
+        "event": "delta",
+        "data": {
+          "text": " her"
+        }
+      },
+      {
+        "at_ms": 6266,
+        "event": "delta",
+        "data": {
+          "text": "ding dogs with"
+        }
+      },
+      {
+        "at_ms": 6291,
+        "event": "delta",
+        "data": {
+          "text": " good"
+        }
+      },
+      {
+        "at_ms": 6319,
+        "event": "delta",
+        "data": {
+          "text": " ag"
+        }
+      },
+      {
+        "at_ms": 6345,
+        "event": "delta",
+        "data": {
+          "text": "ility and speed"
+        }
+      },
+      {
+        "at_ms": 6371,
+        "event": "delta",
+        "data": {
+          "text": " ("
+        }
+      },
+      {
+        "at_ms": 6399,
+        "event": "delta",
+        "data": {
+          "text": "up to 25"
+        }
+      },
+      {
+        "at_ms": 6424,
+        "event": "delta",
+        "data": {
+          "text": " mph when"
+        }
+      },
+      {
+        "at_ms": 6450,
+        "event": "delta",
+        "data": {
+          "text": " fit"
+        }
+      },
+      {
+        "at_ms": 6479,
+        "event": "delta",
+        "data": {
+          "text": "), so"
+        }
+      },
+      {
+        "at_ms": 6503,
+        "event": "delta",
+        "data": {
+          "text": " they require"
+        }
+      },
+      {
+        "at_ms": 6530,
+        "event": "delta",
+        "data": {
+          "text": " consistent"
+        }
+      },
+      {
+        "at_ms": 6564,
+        "event": "delta",
+        "data": {
+          "text": " daily"
+        }
+      },
+      {
+        "at_ms": 6593,
+        "event": "delta",
+        "data": {
+          "text": " exercise and"
+        }
+      },
+      {
+        "at_ms": 6608,
+        "event": "delta",
+        "data": {
+          "text": " pla"
+        }
+      },
+      {
+        "at_ms": 6642,
+        "event": "delta",
+        "data": {
+          "text": "ytime."
+        }
+      },
+      {
+        "at_ms": 6653,
+        "event": "step",
+        "data": {
+          "kind": "answer",
+          "detail": "Based on the Wikipedia article about Pembroke Welsh Corgis, Biscuit needs regular exercise. The article notes that corgis have \"a need for exercise, as they can easily become overweight.\" It also mentions they \"love to run around\" and need mental stimulation to prevent behavioral issues from boredom.\n\nWhile a specific duration isn't stated, corgis are described as active herding dogs with good agility and speed (up to 25 mph when fit), so they require consistent daily exercise and playtime.",
+          "tool_name": null
+        }
+      },
+      {
+        "at_ms": 6816,
+        "event": "done",
+        "data": {
+          "conversation_id": "2f2f3410-4519-4d35-950e-3e33f97a6325",
+          "user": {
+            "id": "61e769ff-abd4-4811-bfdc-b48177e77d0d",
+            "role": "user",
+            "content": "How much exercise does my dog need? Look it up on https://en.wikipedia.org/wiki/Pembroke_Welsh_Corgi and keep it short.",
+            "created_at": "2026-09-26T23:19:13.432476+00:00",
+            "steps": []
+          },
+          "reply": {
+            "id": "bd13e3d6-46ef-46f6-b037-7114943c2176",
+            "role": "assistant",
+            "content": "Based on the Wikipedia article about Pembroke Welsh Corgis, Biscuit needs regular exercise. The article notes that corgis have \"a need for exercise, as they can easily become overweight.\" It also mentions they \"love to run around\" and need mental stimulation to prevent behavioral issues from boredom.\n\nWhile a specific duration isn't stated, corgis are described as active herding dogs with good agility and speed (up to 25 mph when fit), so they require consistent daily exercise and playtime.",
+            "created_at": "2026-09-26T23:19:13.432476+00:00",
+            "steps": [
+              {
+                "id": "a8c06a97-3e7f-4209-978d-282afe9b2636",
+                "kind": "memory",
+                "tool_name": null,
+                "detail": "Selected 1 of 1 candidates\nRankers: bm25, dense; voyageai/voyage-4-nano: 256 dimensions, mean pooling including prompt, L2 normalised\n- 0.033 | The user has a corgi named Biscuit."
+              },
+              {
+                "id": "1665c792-9950-467c-8ce9-89fc846cdd76",
+                "kind": "tool_call",
+                "tool_name": "fetch_url",
+                "detail": "{'url': 'https://en.wikipedia.org/wiki/Pembroke_Welsh_Corgi'}"
+              },
+              {
+                "id": "46c86fd9-0fb0-4257-a572-9a7fcbabd567",
+                "kind": "tool_result",
+                "tool_name": "fetch_url",
+                "detail": "Pembroke Welsh Corgi - Wikipedia Jump to content From Wikipedia, the free encyclopedia Dog breed Pembroke Welsh Corgi Common nicknames Corgi, Welsh Corgi, Pembroke Origin Wales Traits Height Males 10\u201312 in (25\u201330 cm) Females 10\u201312 in (25\u201330 cm) Weight Males 24\u201331 lb (11\u201314 kg) Females 24\u201328 lb (11\u201313 kg) Coat Medium length, thick, weather-resist double coat Color Fawn, Black & Tan, Black & White, Red, Sable Kennel club standards The Kennel Club standard F\u00e9d\u00e9ration Cynologique Internationale standard Dog ( domestic dog ) Sable Pembroke Welsh Corgi puppy (6 weeks old) The Pembroke Welsh Corgi ( / \u02c8 k \u0254\u02d0r \u0261 i / ; Welsh for \"dwarf dog\" [ a ] ) is a cattle herding dog breed that originated in Pembrokeshire , Wales . [ 1 ] The name Corgi is of Welsh origin , and is a compound of the words cor and ci ( mutated to gi ), meaning \"dwarf\" and \"dog\", respectively. [ a ] It is one of two breeds known as a Welsh Corgi , the other being the Cardigan Welsh Corgi . Pembroke Welsh Corgis are descended from the Spitz family of dog. Pembroke Welsh Corgis are famous as the preferred breed of Queen Elizabeth II , who owned more than 30 Royal corgis during her reign. [ 2 ] Although these dogs have been favoured by British royalty for more than seventy years, among the British public they have recently fallen into decline in terms of popularity and demand. [ 3 ] However, they remain very popular in the United States. Cities such as New York, Boston, Los Angeles, and San Francisco hold annual \"Corgi Meetups\" in which hundreds of dogs and their owners congregate to spend the day. [ 4 ] The Pembroke Welsh Corgi has been ranked 11th in Stanley Coren 's The Intelligence of Dogs , which states that the breed is considered an excellent working dog. Pembroke Welsh Corgis were ranked 11th most popular breed of dog in 2020 according to the American Kennel Club. [ 5 ] Description [ edit ] Appearance [ edit ] Pembroke Welsh Corgis differ from the Cardigan Welsh Corgi by being shorter in... [truncated]"
+              },
+              {
+                "id": "36b13a66-6bf6-4fc1-a7bb-9a28794445a6",
+                "kind": "answer",
+                "tool_name": null,
+                "detail": "Based on the Wikipedia article about Pembroke Welsh Corgis, Biscuit needs regular exercise. The article notes that corgis have \"a need for exercise, as they can easily become overweight.\" It also mentions they \"love to run around\" and need mental stimulation to prevent behavioral issues from boredom.\n\nWhile a specific duration isn't stated, corgis are described as active herding dogs with good agility and speed (up to 25 mph when fit), so they require consistent daily exercise and playtime."
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "run-python",
+    "question": "What is the 40th Fibonacci number? Compute it with Python.",
+    "events": [
+      {
+        "at_ms": 1841,
+        "event": "step",
+        "data": {
+          "kind": "tool_call",
+          "detail": "Docker (python:3.13-slim): no host filesystem, no network, read-only root; writes bounded to 64m; memory 512m, CPUs 1, processes 64\n{'code': '\\ndef fibonacci(n):\\n    if n <= 0:\\n        return 0\\n    elif n == 1:\\n        return 1\\n    else:\\n        a, b = 0, 1\\n        for _ in range(2, n + 1):\\n            a, b = b, a + b\\n        return b\\n\\nresult = fibonacci(40)\\nprint(f\"The 40th Fibonacci number is: {result}\")\\n'}",
+          "tool_name": "run_python"
+        }
+      },
+      {
+        "at_ms": 2331,
+        "event": "step",
+        "data": {
+          "kind": "tool_result",
+          "detail": "The 40th Fibonacci number is: 102334155\n",
+          "tool_name": "run_python"
+        }
+      },
+      {
+        "at_ms": 3038,
+        "event": "delta",
+        "data": {
+          "text": "The 40th Fibonacci"
+        }
+      },
+      {
+        "at_ms": 3080,
+        "event": "delta",
+        "data": {
+          "text": " number is **102,334"
+        }
+      },
+      {
+        "at_ms": 3103,
+        "event": "delta",
+        "data": {
+          "text": ",155**."
+        }
+      },
+      {
+        "at_ms": 3107,
+        "event": "step",
+        "data": {
+          "kind": "answer",
+          "detail": "The 40th Fibonacci number is **102,334,155**.",
+          "tool_name": null
+        }
+      },
+      {
+        "at_ms": 3188,
+        "event": "done",
+        "data": {
+          "conversation_id": "d37f1145-743a-49ce-b18b-6166e1b06d0c",
+          "user": {
+            "id": "121b619f-3be1-40be-a9e9-7cfee955cdad",
+            "role": "user",
+            "content": "What is the 40th Fibonacci number? Compute it with Python.",
+            "created_at": "2026-09-26T23:19:17.445414+00:00",
+            "steps": []
+          },
+          "reply": {
+            "id": "8b5b93f8-56a6-46b6-808a-f3ea9ded4a9b",
+            "role": "assistant",
+            "content": "The 40th Fibonacci number is **102,334,155**.",
+            "created_at": "2026-09-26T23:19:17.445414+00:00",
+            "steps": [
+              {
+                "id": "0aa8a556-5a01-4070-8a9d-5628da383012",
+                "kind": "tool_call",
+                "tool_name": "run_python",
+                "detail": "Docker (python:3.13-slim): no host filesystem, no network, read-only root; writes bounded to 64m; memory 512m, CPUs 1, processes 64\n{'code': '\\ndef fibonacci(n):\\n    if n <= 0:\\n        return 0\\n    elif n == 1:\\n        return 1\\n    else:\\n        a, b = 0, 1\\n        for _ in range(2, n + 1):\\n            a, b = b, a + b\\n        return b\\n\\nresult = fibonacci(40)\\nprint(f\"The 40th Fibonacci number is: {result}\")\\n'}"
+              },
+              {
+                "id": "b55f6e6a-c483-4fd9-b055-74328e238d05",
+                "kind": "tool_result",
+                "tool_name": "run_python",
+                "detail": "The 40th Fibonacci number is: 102334155\n"
+              },
+              {
+                "id": "791b7ee1-a79f-4ad2-83ce-fbc2d4aed43b",
+                "kind": "answer",
+                "tool_name": null,
+                "detail": "The 40th Fibonacci number is **102,334,155**."
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "failure-recovery",
+    "question": "Summarise https://loupe-demo-missing-page.invalid/ in one sentence. If that fails, tell me what went wrong.",
+    "events": [
+      {
+        "at_ms": 1276,
+        "event": "step",
+        "data": {
+          "kind": "tool_call",
+          "detail": "{'url': 'https://loupe-demo-missing-page.invalid/'}",
+          "tool_name": "fetch_url"
+        }
+      },
+      {
+        "at_ms": 1289,
+        "event": "step",
+        "data": {
+          "kind": "tool_error",
+          "detail": "Error: Could not resolve host: loupe-demo-missing-page.invalid",
+          "tool_name": "fetch_url"
+        }
+      },
+      {
+        "at_ms": 2046,
+        "event": "delta",
+        "data": {
+          "text": "The"
+        }
+      },
+      {
+        "at_ms": 2226,
+        "event": "delta",
+        "data": {
+          "text": " fetch"
+        }
+      },
+      {
+        "at_ms": 2229,
+        "event": "delta",
+        "data": {
+          "text": " failed"
+        }
+      },
+      {
+        "at_ms": 2230,
+        "event": "delta",
+        "data": {
+          "text": " because **"
+        }
+      },
+      {
+        "at_ms": 2231,
+        "event": "delta",
+        "data": {
+          "text": "the domain name could"
+        }
+      },
+      {
+        "at_ms": 2232,
+        "event": "delta",
+        "data": {
+          "text": " not be resolved**"
+        }
+      },
+      {
+        "at_ms": 2232,
+        "event": "delta",
+        "data": {
+          "text": " \u2014"
+        }
+      },
+      {
+        "at_ms": 2238,
+        "event": "delta",
+        "data": {
+          "text": " \""
+        }
+      },
+      {
+        "at_ms": 2266,
+        "event": "delta",
+        "data": {
+          "text": "loupe-demo-missing"
+        }
+      },
+      {
+        "at_ms": 2293,
+        "event": "delta",
+        "data": {
+          "text": "-page.invalid\" doesn"
+        }
+      },
+      {
+        "at_ms": 2319,
+        "event": "delta",
+        "data": {
+          "text": "'t appear"
+        }
+      },
+      {
+        "at_ms": 2346,
+        "event": "delta",
+        "data": {
+          "text": " to be a valid,"
+        }
+      },
+      {
+        "at_ms": 2372,
+        "event": "delta",
+        "data": {
+          "text": " accessible website."
+        }
+      },
+      {
+        "at_ms": 2419,
+        "event": "delta",
+        "data": {
+          "text": " The"
+        }
+      },
+      {
+        "at_ms": 2424,
+        "event": "delta",
+        "data": {
+          "text": " `."
+        }
+      },
+      {
+        "at_ms": 2451,
+        "event": "delta",
+        "data": {
+          "text": "invalid` suffix"
+        }
+      },
+      {
+        "at_ms": 2477,
+        "event": "delta",
+        "data": {
+          "text": " is a"
+        }
+      },
+      {
+        "at_ms": 2502,
+        "event": "delta",
+        "data": {
+          "text": " reserved"
+        }
+      },
+      {
+        "at_ms": 2529,
+        "event": "delta",
+        "data": {
+          "text": " TLD that's"
+        }
+      },
+      {
+        "at_ms": 2557,
+        "event": "delta",
+        "data": {
+          "text": " explicitly"
+        }
+      },
+      {
+        "at_ms": 2581,
+        "event": "delta",
+        "data": {
+          "text": " not"
+        }
+      },
+      {
+        "at_ms": 2608,
+        "event": "delta",
+        "data": {
+          "text": " ro"
+        }
+      },
+      {
+        "at_ms": 2635,
+        "event": "delta",
+        "data": {
+          "text": "utable on"
+        }
+      },
+      {
+        "at_ms": 2664,
+        "event": "delta",
+        "data": {
+          "text": " the internet."
+        }
+      },
+      {
+        "at_ms": 2686,
+        "event": "step",
+        "data": {
+          "kind": "answer",
+          "detail": "The fetch failed because **the domain name could not be resolved** \u2014 \"loupe-demo-missing-page.invalid\" doesn't appear to be a valid, accessible website. The `.invalid` suffix is a reserved TLD that's explicitly not routable on the internet.",
+          "tool_name": null
+        }
+      },
+      {
+        "at_ms": 2774,
+        "event": "done",
+        "data": {
+          "conversation_id": "134838be-db42-4bbd-826e-bab0e58f3ae9",
+          "user": {
+            "id": "b40ac1b2-8ede-42b1-b290-916d3e4818b2",
+            "role": "user",
+            "content": "Summarise https://loupe-demo-missing-page.invalid/ in one sentence. If that fails, tell me what went wrong.",
+            "created_at": "2026-09-26T23:19:20.704745+00:00",
+            "steps": []
+          },
+          "reply": {
+            "id": "1309c1d8-1ccd-4c3c-800a-e164742e92fc",
+            "role": "assistant",
+            "content": "The fetch failed because **the domain name could not be resolved** \u2014 \"loupe-demo-missing-page.invalid\" doesn't appear to be a valid, accessible website. The `.invalid` suffix is a reserved TLD that's explicitly not routable on the internet.",
+            "created_at": "2026-09-26T23:19:20.704745+00:00",
+            "steps": [
+              {
+                "id": "7e228a18-1665-4940-bfeb-97686cc7e5f3",
+                "kind": "tool_call",
+                "tool_name": "fetch_url",
+                "detail": "{'url': 'https://loupe-demo-missing-page.invalid/'}"
+              },
+              {
+                "id": "cdcac9f0-e417-4862-b3b8-1907fad11c00",
+                "kind": "tool_error",
+                "tool_name": "fetch_url",
+                "detail": "Error: Could not resolve host: loupe-demo-missing-page.invalid"
+              },
+              {
+                "id": "01a07c39-cec5-495f-8f21-c3f29043a324",
+                "kind": "answer",
+                "tool_name": null,
+                "detail": "The fetch failed because **the domain name could not be resolved** \u2014 \"loupe-demo-missing-page.invalid\" doesn't appear to be a valid, accessible website. The `.invalid` suffix is a reserved TLD that's explicitly not routable on the internet."
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+]

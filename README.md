@@ -11,6 +11,7 @@ plans, tool calls, results and recalled memories so you can inspect how it reach
 - Records tool failures and blocks identical failed calls from running again in the same turn.
 - Gives each browser its own private space for conversations and remembered facts.
 - Holds separate conversations, with a sidebar to switch between, rename and delete them.
+- Opens with a narrated replay of a real turn and suggests prompts for a first question.
 
 <!-- demo gif goes here -->
 *A screen recording is coming.*
@@ -72,6 +73,22 @@ and the cap is really double.
 If Docker is unavailable, the tool is withheld from the model entirely rather than falling
 back to something weaker. A failed container launch never falls back to host execution.
 Set `ENABLE_CODE_EXECUTION=false` to turn the tool off.
+
+## Guided tour
+
+A first visit plays a real recorded turn in the live interface: it recalls a stored fact,
+fetches a Wikipedia page and answers from it. Playback pauses at each new step with a caption
+in that step's colour, and the sidebar and memory panel stay dimmed until they matter. The
+replay is static data, so the tour works even when the backend is down. "Take the tour" in the
+header plays it again, and an empty chat offers suggested prompts plus two uncaptioned replays,
+one running Python and one recovering from a failed fetch.
+
+The replays in `frontend/app/demo/replays.json` are recorded from a running backend rather than
+written by hand. Captions are keyed by step kind, so re-recording never breaks them:
+
+```bash
+cd backend && .venv/bin/python -m scripts.record_replay ../frontend/app/demo/replays.json
+```
 
 ## Setup
 
