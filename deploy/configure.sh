@@ -25,6 +25,8 @@ ask() {
 echo "Values are read from your keyboard and never printed."
 database_url=$(ask "Supabase session pooler connection string (with your password filled in)" secret)
 supabase_url=$(ask "Supabase project URL, like https://abcd.supabase.co")
+# The dashboard also shows the REST endpoint; keep only the scheme and host.
+supabase_url=$(printf '%s' "$supabase_url" | sed -E 's|^(https://[^/]+).*|\1|')
 service_key=$(ask "Supabase service_role key" secret)
 anthropic_key=$(ask "Anthropic API key for the demo" secret)
 frontend_origin=$(ask "Frontend origin, like https://loupe-demo.vercel.app (use http://localhost:3000 for now if unknown)")
