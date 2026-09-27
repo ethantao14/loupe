@@ -16,8 +16,9 @@ command -v psql >/dev/null || { echo "psql is required." >&2; exit 1; }
 bold=$'\e[1m' dim=$'\e[2m' red=$'\e[31m' green=$'\e[32m' reset=$'\e[0m'
 
 # Prints where to find a value, then reads it until the check function accepts it.
+# Whitespace is stripped from pasted values unless the fifth argument is set.
 ask() {
-  local title=$1 where=$2 check=$3 secret=${4:-} value problem
+  local title=$1 where=$2 check=$3 secret=${4:-} verbatim=${5:-} value problem
   printf '\n%s%s%s\n%s%s%s\n' "$bold" "$title" "$reset" "$dim" "$where" "$reset" >&2
   while true; do
     if [[ -n "$secret" ]]; then
@@ -25,7 +26,7 @@ ask() {
     else
       read -r -p "> " value
     fi
-    value=$(printf '%s' "$value" | tr -d '[:space:]')
+    [[ -n "$verbatim" ]] || value=$(printf '%s' "$value" | tr -d '[:space:]')
     if problem=$("$check" "$value"); then
       printf '%sOK%s\n' "$green" "$reset" >&2
       printf '%s' "$value"
@@ -79,7 +80,7 @@ chmod 600 "$PGPASSFILE"
 while true; do
   db_password=$(ask "2/5  Database password" \
 "The loupe-demo database password you saved when creating the project. Paste it as is." \
-check_nonempty secret)
+check_nonempty secret verbatim)
   escaped=${db_password//\\/\\\\}
   escaped=${escaped//:/\\:}
   printf '%s:%s:%s:%s:%s\n' "$db_host" "$db_port" "$db_name" "$db_user" "$escaped" > "$PGPASSFILE"
@@ -132,5 +133,11 @@ while IFS= read -r line; do
   esac
   printf '%s\n' "$line"
 done < deploy/backend.env.example | ssh -i "$SSH_KEY" "$SERVER" \
-  'sudo install -d -m 755 /etc/loupe && sudo tee /etc/loupe/backend.env >/dev/null && sudo chmod 600 /etc/loupe/backend.env'
+  'sudo sh -c '\''set -e
+    install -d -m 755 /etc/loupe
+    # mktemp creates the file private before any secret is written, then it replaces the old one.
+    tmp=$(mktemp /etc/loupe/.backend.env.XXXXXX)
+    cat > "$tmp"
+    if getent group loupe >/dev/null; then chgrp loupe "$tmp"; chmod 640 "$tmp"; fi
+    mv "$tmp" /etc/loupe/backend.env'\'''
 echo "${green}${bold}Done.${reset} The database is ready and the server has its settings."
