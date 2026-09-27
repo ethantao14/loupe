@@ -108,19 +108,31 @@ anthropic_key=$(ask "5/5  Anthropic API key" \
 check_anthropic_key secret)
 
 echo
-# Migrations are not safe to replay, so they only run against an empty database.
-if [[ $(psql "$database_url" -qAt -c "select to_regclass('public.messages') is null") == t ]]; then
-  echo "==> Applying migrations to the demo database"
-  for migration in backend/migrations/*.sql; do
-    echo "    $migration"
-    if ! psql "$database_url" -q -v ON_ERROR_STOP=1 -f "$migration" >/dev/null 2>&1; then
-      echo "${red}Failed on $migration.${reset} Send this message to whoever is helping you." >&2
-      exit 1
-    fi
-  done
-else
-  echo "==> The database already has tables, so migrations were skipped. Apply new ones by hand."
+# Migrations are not safe to replay, so a ledger outside the public schema records each one
+# that finished. A database set up before the ledger existed has to be recorded by hand.
+psql "$database_url" -q -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+set client_min_messages = warning;
+create schema if not exists loupe_meta;
+create table if not exists loupe_meta.migrations (name text primary key, applied_at timestamptz not null default now());
+SQL
+if [[ $(psql "$database_url" -qAt -c "select to_regclass('public.messages') is not null and not exists (select 1 from loupe_meta.migrations)") == t ]]; then
+  echo "${red}This database has tables but no record of which migrations ran.${reset}" >&2
+  echo "Insert the name of each applied file into loupe_meta.migrations, then run this again." >&2
+  exit 1
 fi
+echo "==> Applying migrations to the demo database"
+for migration in backend/migrations/*.sql; do
+  name=$(basename "$migration")
+  if [[ $(psql "$database_url" -qAt -v name="$name" <<< "select count(*) from loupe_meta.migrations where name = :'name'") == 1 ]]; then
+    continue
+  fi
+  echo "    $migration"
+  if ! psql "$database_url" -q -v ON_ERROR_STOP=1 -f "$migration" >/dev/null 2>&1; then
+    echo "${red}Failed on $migration.${reset} Send this message to whoever is helping you." >&2
+    exit 1
+  fi
+  psql "$database_url" -q -v ON_ERROR_STOP=1 -v name="$name" >/dev/null <<< "insert into loupe_meta.migrations (name) values (:'name')"
+done
 
 echo "==> Sending settings to the server"
 # Shell builtins fill in the file and ssh reads it on stdin, so no secret is an argument.
