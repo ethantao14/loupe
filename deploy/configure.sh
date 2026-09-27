@@ -23,7 +23,16 @@ ask() {
 }
 
 echo "Values are read from your keyboard and never printed."
-database_url=$(ask "Supabase session pooler connection string (with your password filled in)" secret)
+pooler_url=$(ask "Supabase session pooler connection string, exactly as shown, with [YOUR-PASSWORD] left in")
+db_password=$(ask "Database password" secret)
+# Characters such as ? # / @ in a password break the URI unless percent-encoded.
+encoded_password=$(DB_PASSWORD="$db_password" python3 -c \
+  'import os, urllib.parse; print(urllib.parse.quote(os.environ["DB_PASSWORD"], safe=""))')
+if [[ "$pooler_url" != *"[YOUR-PASSWORD]"* ]]; then
+  echo "Paste the string with [YOUR-PASSWORD] still in it." >&2
+  exit 1
+fi
+database_url=${pooler_url/\[YOUR-PASSWORD\]/$encoded_password}
 supabase_url=$(ask "Supabase project URL, like https://abcd.supabase.co")
 # The dashboard also shows the REST endpoint; keep only the scheme and host.
 supabase_url=$(printf '%s' "$supabase_url" | sed -E 's|^(https://[^/]+).*|\1|')
