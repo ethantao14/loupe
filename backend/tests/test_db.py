@@ -8,6 +8,25 @@ from supabase import Client
 from app import db
 
 
+@pytest.mark.parametrize("scope", [None, "total", "ip", "visitor"])
+def test_consume_message_quota_rpc(scope: str | None) -> None:
+    client = Mock(spec=Client)
+    client.rpc.return_value.execute.return_value = SimpleNamespace(data=scope)
+
+    assert db.consume_message_quota(client, VISITOR_ID, "hashed-ip", 10, None, 30) == scope
+    client.rpc.assert_called_once_with(
+        "consume_message_quota",
+        {
+            "visitor": VISITOR_ID,
+            "ip_hash": "hashed-ip",
+            "visitor_limit": 10,
+            "ip_limit": None,
+            "total_limit": 30,
+        },
+    )
+    client.rpc.return_value.execute.assert_called_once_with()
+
+
 @pytest.mark.parametrize("table", ["messages", "steps", "conversations"])
 @pytest.mark.parametrize("row_count", [0, 1000, 2003])
 def test_fetch_paginates_in_order(table: str, row_count: int) -> None:

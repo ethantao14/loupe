@@ -7,7 +7,8 @@ import type { Conversation, Memory, Message, SendResult, Step, StreamHandlers } 
 import { suggestions } from "../demo/suggestions";
 import Chat from "./Chat";
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/api")>(),
   fetchConversations: vi.fn(),
   fetchMessages: vi.fn(),
   streamMessage: vi.fn(),
@@ -69,6 +70,74 @@ describe("Chat", () => {
     fetchConversations.mockResolvedValue(conversations);
     fetchMemories.mockResolvedValue(rememberedFacts);
     deleteMemory.mockResolvedValue(undefined);
+  });
+
+  it.each([429, 422] as const)("shows status %s detail and restores the draft", async (status) => {
+    fetchMessages.mockResolvedValue([message("1", "user", "Earlier message")]);
+    const detail = status === 429
+      ? "You have reached today's limit. The replays still work."
+      : "Message content must be at most 2000 characters.";
+    streamMessage.mockRejectedValueOnce(new api.MessageRequestError(status, detail));
+    render(<Chat />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+    const input = screen.getByRole("textbox", { name: "Message" });
+    await userEvent.type(input, "My draft");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(detail);
+    expect(input).toHaveValue("My draft");
+    expect(screen.queryByText("Could not send that message.")).not.toBeInTheDocument();
+    if (status === 429) {
+      const alternatives = within(screen.getByRole("group", { name: "Explore the demo" }));
+      expect(alternatives.getByRole("button", { name: "Watch: running Python" })).toBeVisible();
+      expect(alternatives.getByRole("button", { name: "Watch: recovering from a failure" })).toBeVisible();
+      expect(alternatives.getByRole("button", { name: "Take the tour" })).toBeVisible();
+      await userEvent.click(alternatives.getByRole("button", { name: "Take the tour" }));
+      expect(screen.getByRole("button", { name: "Skip tour" })).toBeVisible();
+      expect(streamMessage).toHaveBeenCalledTimes(1);
+    } else {
+      expect(screen.queryByRole("group", { name: "Explore the demo" })).not.toBeInTheDocument();
+    }
+  });
+
+  it("offers working Watch chips after an empty chat reaches its quota", async () => {
+    fetchMessages.mockResolvedValue([]);
+    streamMessage.mockRejectedValueOnce(new api.MessageRequestError(429, "Today's limit reached."));
+    render(<Chat />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+    await userEvent.type(screen.getByRole("textbox", { name: "Message" }), "Hello");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Today's limit reached.");
+
+    for (const name of ["Watch: running Python", "Watch: recovering from a failure"]) {
+      await userEvent.click(screen.getByRole("button", { name }));
+      await userEvent.click(screen.getByRole("button", { name: "Close" }));
+    }
+    expect(streamMessage).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("Hello");
+    await userEvent.click(screen.getByRole("button", { name: "New chat" }));
+    expect(screen.queryByRole("group", { name: "Explore the demo" })).not.toBeInTheDocument();
+  });
+
+  it("caps the composer and shows its counter only within 200 characters of the limit", async () => {
+    const user = userEvent.setup();
+    fetchMessages.mockResolvedValue([]);
+    render(<Chat />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+    const input = screen.getByRole("textbox", { name: "Message" });
+    expect(input).toHaveAttribute("maxlength", "2000");
+    expect(screen.queryByText(/\/ 2000$/)).not.toBeInTheDocument();
+    await user.click(input);
+    await user.paste("x".repeat(1799));
+    expect(screen.queryByText(/\/ 2000$/)).not.toBeInTheDocument();
+    await user.type(input, "x");
+    expect(screen.getByText("1800 / 2000")).toBeVisible();
+    await user.paste("x".repeat(199));
+    await user.type(input, "yz");
+    expect(input).toHaveValue("x".repeat(1999) + "y");
+    expect(screen.getByText("2000 / 2000")).toBeVisible();
+    await user.clear(input);
+    expect(screen.queryByText(/\/ 2000$/)).not.toBeInTheDocument();
   });
 
   it("keeps memories collapsed without fetching until opened and retains the loaded count", async () => {

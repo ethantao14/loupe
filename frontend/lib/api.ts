@@ -29,10 +29,26 @@ export type Conversation = {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-async function parseOrThrow(response: Response): Promise<unknown> {
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
+export class MessageRequestError extends Error {
+  constructor(public readonly status: 429 | 422, detail: string) {
+    super(detail);
+    this.name = "MessageRequestError";
   }
+}
+
+async function checkResponse(response: Response): Promise<void> {
+  if (response.ok) return;
+  if (response.status === 429 || response.status === 422) {
+    const payload: unknown = await response.json().catch(() => null);
+    if (isRecord(payload) && typeof payload.detail === "string") {
+      throw new MessageRequestError(response.status, payload.detail);
+    }
+  }
+  throw new Error(`Request failed with status ${response.status}`);
+}
+
+async function parseOrThrow(response: Response): Promise<unknown> {
+  await checkResponse(response);
   return response.json();
 }
 
@@ -191,9 +207,7 @@ export async function streamMessage(
     headers: { "Content-Type": "application/json", "X-Visitor-Id": getVisitorId() },
     body: JSON.stringify({ content, conversation_id: conversationId }),
   });
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
+  await checkResponse(response);
   if (!response.body) throw new Error("Message stream has no response body.");
 
   const reader = response.body.getReader();

@@ -16,6 +16,31 @@ def get_client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
+def check_health(client: Client) -> None:
+    client.table(CONVERSATIONS_TABLE).select("id").limit(1).execute()
+
+
+def consume_message_quota(
+    client: Client,
+    visitor_id: str,
+    ip_hash: str,
+    visitor_limit: int | None,
+    ip_limit: int | None,
+    total_limit: int | None,
+) -> str | None:
+    response = client.rpc(
+        "consume_message_quota",
+        {
+            "visitor": visitor_id,
+            "ip_hash": ip_hash,
+            "visitor_limit": visitor_limit,
+            "ip_limit": ip_limit,
+            "total_limit": total_limit,
+        },
+    ).execute()
+    return cast(str | None, response.data)
+
+
 def insert_memory(
     client: Client, visitor_id: str, fact: str, embedding: list[float] | None = None
 ) -> dict:

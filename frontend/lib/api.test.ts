@@ -6,6 +6,7 @@ import {
   fetchConversations,
   fetchMemories,
   fetchMessages,
+  MessageRequestError,
   renameConversation,
   sendMessage,
   streamMessage,
@@ -21,6 +22,30 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("message validation errors", () => {
+  it.each([429, 422] as const)("preserves status %s details for both message endpoints", async (status) => {
+    const detail = status === 429 ? "Today's live budget is used." : "Message is too long.";
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => Response.json({ detail }, { status })));
+    const handlers = { onDelta: vi.fn(), onStep: vi.fn(), onDone: vi.fn(), onError: vi.fn() };
+
+    for (const request of [
+      () => sendMessage("Hello"),
+      () => streamMessage("Hello", undefined, handlers),
+    ]) {
+      const error: unknown = await request().catch((cause: unknown) => cause);
+      expect(error).toBeInstanceOf(MessageRequestError);
+      expect(error).toMatchObject({ status, message: detail });
+    }
+    expect(handlers.onDelta).not.toHaveBeenCalled();
+    expect(handlers.onDone).not.toHaveBeenCalled();
+  });
+
+  it.each([null, { detail: [] }, { detail: 123 }])("handles missing text detail: %j", async (payload) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(payload, { status: 422 })));
+    await expect(sendMessage("Hello")).rejects.toThrow("Request failed with status 422");
+  });
 });
 
 describe("memory API", () => {

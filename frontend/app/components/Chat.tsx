@@ -8,6 +8,7 @@ import {
   fetchConversations,
   fetchMemories,
   fetchMessages,
+  MessageRequestError,
   renameConversation,
   streamMessage,
   type Conversation,
@@ -16,9 +17,25 @@ import {
 } from "@/lib/api";
 
 import { suggestions } from "../demo/suggestions";
+import type { ReplayId } from "../demo/replay";
 import MessageView, { styleForStep } from "./MessageView";
 import ReplayTour from "./ReplayTour";
 import { useReplayTour } from "./useReplayTour";
+
+const MAX_MESSAGE_CHARS = 2000;
+
+function WatchChips({ onReplay }: { onReplay: (id: ReplayId) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <button type="button" className="replay-chip" onClick={() => onReplay("run-python")}>
+        Watch: running Python
+      </button>
+      <button type="button" className="replay-chip" onClick={() => onReplay("failure-recovery")}>
+        Watch: recovering from a failure
+      </button>
+    </div>
+  );
+}
 
 function MemoryPanel({ refreshToken }: { refreshToken: number }) {
   const [expanded, setExpanded] = useState(false);
@@ -160,6 +177,7 @@ export default function Chat() {
   const [isSending, setIsSending] = useState(false);
   const [memoryVersion, setMemoryVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [quotaReached, setQuotaReached] = useState(false);
   const [conversationError, setConversationError] = useState<string | null>(null);
   const [conversationAction, setConversationAction] = useState<{
     id: string;
@@ -209,6 +227,7 @@ export default function Chat() {
     setMessages([]);
     setDraft("");
     setError(null);
+    setQuotaReached(false);
     setIsLoading(id !== undefined);
     if (id === undefined) return;
     try {
@@ -275,6 +294,7 @@ export default function Chat() {
     setDraft("");
     setIsSending(true);
     setError(null);
+    setQuotaReached(false);
     setProvisional({
       id: "streaming-reply", role: "assistant", content: "", created_at: "", steps: [],
     });
@@ -308,9 +328,10 @@ export default function Chat() {
       } catch {
         setConversationError("Could not refresh conversations.");
       }
-    } catch {
+    } catch (cause) {
       setProvisional(null);
-      setError("Could not send that message.");
+      setError(cause instanceof MessageRequestError ? cause.message : "Could not send that message.");
+      setQuotaReached(cause instanceof MessageRequestError && cause.status === 429);
       setDraft(content);
     } finally {
       setIsSending(false);
@@ -499,21 +520,30 @@ export default function Chat() {
                   </li>
                 ))}
               </ul>
-              <p className="pt-2 text-sm text-text-secondary">Or watch an example</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" className="replay-chip" onClick={() => startReplay("run-python")}>
-                  Watch: running Python
-                </button>
-                <button type="button" className="replay-chip" onClick={() => startReplay("failure-recovery")}>
-                  Watch: recovering from a failure
-                </button>
-              </div>
+              {!quotaReached ? (
+                <>
+                  <p className="pt-2 text-sm text-text-secondary">Or watch an example</p>
+                  <WatchChips onReplay={startReplay} />
+                </>
+              ) : null}
             </div>
           ) : null}
           {[...messages, ...(provisional ? [provisional] : [])].map((message) => (
             <MessageView key={message.id} message={message} streaming={message === provisional && isSending} />
           ))}
-          {error ? <p className="text-sm text-step-error">{error}</p> : null}
+          {error ? (
+            <div className="max-w-2xl space-y-3">
+              <p role="alert" className="text-sm text-step-error">{error}</p>
+              {quotaReached ? (
+                <div role="group" aria-label="Explore the demo" className="space-y-3">
+                  <WatchChips onReplay={startReplay} />
+                  <button type="button" className="tour-text-button" onClick={() => startReplay("memory-and-fetch")}>
+                    Take the tour
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {session ? (
@@ -530,6 +560,8 @@ export default function Chat() {
             <input
               ref={composerRef}
               aria-label="Message"
+              maxLength={MAX_MESSAGE_CHARS}
+              aria-describedby={draft.length >= MAX_MESSAGE_CHARS - 200 ? "message-character-count" : undefined}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               placeholder="Ask something"
@@ -543,6 +575,11 @@ export default function Chat() {
               Send
             </button>
           </div>
+          {draft.length >= MAX_MESSAGE_CHARS - 200 ? (
+            <p id="message-character-count" className="mt-2 max-w-2xl text-right text-xs text-text-muted">
+              {draft.length} / {MAX_MESSAGE_CHARS}
+            </p>
+          ) : null}
         </form>
       </main>
     </div>
