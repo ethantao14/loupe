@@ -22,9 +22,9 @@ ask() {
   printf '\n%s%s%s\n%s%s%s\n' "$bold" "$title" "$reset" "$dim" "$where" "$reset" >&2
   while true; do
     if [[ -n "$secret" ]]; then
-      read -r -s -p "> (hidden as you paste) " value; echo >&2
+      IFS= read -r -s -p "> (hidden as you paste) " value; echo >&2
     else
-      read -r -p "> " value
+      IFS= read -r -p "> " value
     fi
     [[ -n "$verbatim" ]] || value=$(printf '%s' "$value" | tr -d '[:space:]')
     if problem=$("$check" "$value"); then
@@ -131,7 +131,10 @@ for migration in backend/migrations/*.sql; do
     echo "${red}Failed on $migration.${reset} Send this message to whoever is helping you." >&2
     exit 1
   fi
-  psql "$database_url" -q -v ON_ERROR_STOP=1 -v name="$name" >/dev/null <<< "insert into loupe_meta.migrations (name) values (:'name')"
+  if ! psql "$database_url" -q -v ON_ERROR_STOP=1 -v name="$name" >/dev/null <<< "insert into loupe_meta.migrations (name) values (:'name')"; then
+    echo "${red}$name ran but was not recorded.${reset} Insert $name into loupe_meta.migrations before running this again." >&2
+    exit 1
+  fi
 done
 
 echo "==> Sending settings to the server"
