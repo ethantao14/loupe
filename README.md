@@ -153,6 +153,34 @@ The backfill only updates facts with null embeddings and can be run again safely
 New facts receive embeddings when available. Development dependencies in
 `requirements-dev.txt` include the optional libraries; tests never download weights.
 
+## Demo limits
+
+Only live messages use the paid API. Replays and the guided tour are static and free.
+Apply `0010_usage_limits.sql` and set these optional backend environment variables:
+
+| Variable | Effect |
+| --- | --- |
+| `DAILY_MESSAGES_PER_VISITOR` | Daily cap per browser visitor ID, for example `10`. |
+| `DAILY_MESSAGES_PER_IP` | Daily cap per hashed client IP, for example `20`. |
+| `DAILY_MESSAGES_TOTAL` | Daily cap across the demo, for example `30`. |
+| `MAX_MESSAGE_CHARS` | Maximum message length after trimming, defaults to `2000`. The composer also caps input at 2000. |
+| `TRUST_PROXY` | Defaults to `false`, using the direct connection address. When `true`, uses the rightmost `X-Forwarded-For` address. |
+
+Each daily limit is off when unset or empty; zero blocks live messages for that scope.
+Counters persist in Postgres and reset at midnight UTC. Unknown conversations and invalid
+content do not consume quota. An accepted turn still counts if it later fails.
+Only enable `TRUST_PROXY` behind your own reverse proxy that appends the client address.
+The application hashes IP addresses with SHA-256 before sending them to the database.
+
+At Haiku 4.5 pricing of $1 per million input tokens and $5 per million output tokens,
+a typical turn with 5,000 to 10,000 input tokens costs about one cent including a short
+reply. A $10 monthly budget covers roughly 1,000 such turns; a total cap of 30 per day
+leaves some headroom. These are estimates, not a dollar cap, since history and tool calls
+can make turns cost more.
+
+`GET /api/health` checks database connectivity without a visitor header, returning 200
+with `{"status":"ok"}` or 503 on failure. A daily timer can call it to keep the free database active.
+
 ## Checks
 
 The six gates are backend lint, type checking and tests, plus frontend lint, type checking

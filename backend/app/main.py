@@ -7,13 +7,13 @@ from dataclasses import asdict
 from uuid import UUID
 
 from anthropic import Anthropic
-from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 from supabase import Client
 
-from app import agent, claude_client, db, embedding
+from app import agent, claude_client, db, embedding, limits
 from app.memory import MemoryStore
 
 
@@ -112,6 +112,30 @@ def get_claude_client() -> Anthropic:
     return claude_client.get_client()
 
 
+def accept_message(
+    body: MessageIn,
+    request: Request,
+    client: Client = Depends(get_db_client),
+    visitor_id: str = Depends(get_visitor_id),
+) -> MessageIn:
+    body.content = limits.validate_content(body.content)
+    if body.conversation_id is not None and not db.conversation_exists(
+        client, visitor_id, str(body.conversation_id)
+    ):
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    limits.consume_quota(request, client, visitor_id)
+    return body
+
+
+@app.get("/api/health")
+def health() -> dict[str, str]:
+    try:
+        db.check_health(get_db_client())
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database unavailable.") from None
+    return {"status": "ok"}
+
+
 @app.get("/api/memories", response_model=list[MemoryOut])
 def list_memories(
     client: Client = Depends(get_db_client),
@@ -185,16 +209,12 @@ def list_messages(
 
 @app.post("/api/messages", response_model=SendMessageOut)
 def send_message(
-    body: MessageIn,
+    body: MessageIn = Depends(accept_message),
     db_client: Client = Depends(get_db_client),
     llm_client: Anthropic = Depends(get_claude_client),
     visitor_id: str = Depends(get_visitor_id),
 ) -> dict:
     conversation_id = str(body.conversation_id) if body.conversation_id is not None else None
-    if conversation_id is not None and not db.conversation_exists(
-        db_client, visitor_id, conversation_id
-    ):
-        raise HTTPException(status_code=404, detail="Conversation not found.")
     # Messages and steps are persisted together after the reply succeeds.
     # Facts saved by remember persist independently of the exchange.
     history = db.fetch_messages(db_client, conversation_id) if conversation_id is not None else []
@@ -226,16 +246,12 @@ def _sse_event(name: str, payload: dict) -> str:
 
 @app.post("/api/messages/stream")
 def stream_message(
-    body: MessageIn,
+    body: MessageIn = Depends(accept_message),
     db_client: Client = Depends(get_db_client),
     llm_client: Anthropic = Depends(get_claude_client),
     visitor_id: str = Depends(get_visitor_id),
 ) -> StreamingResponse:
     conversation_id = str(body.conversation_id) if body.conversation_id is not None else None
-    if conversation_id is not None and not db.conversation_exists(
-        db_client, visitor_id, conversation_id
-    ):
-        raise HTTPException(status_code=404, detail="Conversation not found.")
     history = db.fetch_messages(db_client, conversation_id) if conversation_id is not None else []
     pending = [*history, {"role": "user", "content": body.content}]
 
