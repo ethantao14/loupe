@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Loupe keep-alive (free databases pause after a week idle)
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
