@@ -31,8 +31,15 @@ echo "==> Firewall"
 # Oracle's Ubuntu images reject everything except SSH in iptables, on top of the
 # cloud security list, so both have to allow web traffic.
 for port in 80 443; do
-  rule=(INPUT -p tcp -m state --state NEW -m tcp --dport "$port" -j ACCEPT)
-  iptables -C "${rule[@]}" 2>/dev/null || iptables -I "${rule[0]}" 5 "${rule[@]:1}"
+  rule=(-p tcp -m state --state NEW -m tcp --dport "$port" -j ACCEPT)
+  iptables -C INPUT "${rule[@]}" 2>/dev/null && continue
+  # Insert ahead of the image's catch-all REJECT, or append when there is none.
+  reject=$(iptables -L INPUT --line-numbers -n | awk '$2 == "REJECT" { print $1; exit }')
+  if [[ -n $reject ]]; then
+    iptables -I INPUT "$reject" "${rule[@]}"
+  else
+    iptables -A INPUT "${rule[@]}"
+  fi
 done
 netfilter-persistent save
 
@@ -40,8 +47,9 @@ echo "==> Service user and code"
 id loupe >/dev/null 2>&1 || useradd --system --create-home --home-dir /var/lib/loupe --shell /usr/sbin/nologin loupe
 usermod -aG docker loupe
 if [[ -d "$APP_DIR/.git" ]]; then
-  git -C "$APP_DIR" fetch --quiet origin "$BRANCH"
-  git -C "$APP_DIR" reset --quiet --hard FETCH_HEAD
+  # The checkout belongs to loupe, and git refuses to work in it as root.
+  sudo -u loupe git -C "$APP_DIR" fetch --quiet origin "$BRANCH"
+  sudo -u loupe git -C "$APP_DIR" reset --quiet --hard FETCH_HEAD
 else
   git clone --quiet --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
 fi
