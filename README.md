@@ -13,8 +13,8 @@ plans, tool calls, results and recalled memories so you can inspect how it reach
 - Holds separate conversations, with a sidebar to switch between, rename and delete them.
 - Opens with a narrated replay of a real turn and suggests prompts for a first question.
 
-<!-- demo gif goes here -->
-*A screen recording is coming.*
+**[Try the live demo](https://loupe-red.vercel.app)**. It opens with a guided tour of a
+recorded turn, then lets you send a few live messages of your own.
 
 ## How it works
 
@@ -180,6 +180,27 @@ can make turns cost more.
 
 `GET /api/health` checks database connectivity without a visitor header, returning 200
 with `{"status":"ok"}` or 503 on failure. A daily timer can call it to keep the free database active.
+
+## Deploying the demo
+
+The demo frontend runs on Vercel with `frontend` as the root directory and
+`NEXT_PUBLIC_API_URL` set to the backend's address. The backend runs on one Ubuntu 24.04
+server behind Caddy, which serves HTTPS on an sslip.io hostname. The `deploy` folder has:
+
+- `configure.sh`, run from your machine, which prompts for each secret without echoing it,
+  applies the migrations to the demo database and writes `/etc/loupe/backend.env` on the server.
+- `setup.sh`, run on the server, which installs Docker and Caddy, opens the firewall, installs
+  the backend and starts it with systemd. Running it again updates the server to the branch's latest commit.
+- A daily timer that calls `GET /api/health` so the free database stays active.
+
+```bash
+FRONTEND_ORIGIN=https://your-app.vercel.app bash deploy/configure.sh ubuntu@203.0.113.7
+scp deploy/setup.sh ubuntu@203.0.113.7:
+ssh ubuntu@203.0.113.7 'sudo DOMAIN=203-0-113-7.sslip.io bash setup.sh'
+```
+
+Later updates can run `/opt/loupe/deploy/setup.sh` on the server instead. `FRONTEND_ORIGIN`
+must match the Vercel URL, or the browser's CORS check rejects every request.
 
 ## Checks
 
