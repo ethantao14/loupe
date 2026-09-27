@@ -1,0 +1,6 @@
+[Unit]
+Description=Keep the free database awake by reading from it
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/curl -fsS --max-time 30 http://127.0.0.1:8000/api/health

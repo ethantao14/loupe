@@ -1,0 +1,9 @@
+# Installed by setup.sh with {$DOMAIN} replaced. Caddy obtains and renews the
+# HTTPS certificate on its own.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy 127.0.0.1:8000 {
+		# Replies stream as server-sent events, so pass each chunk on at once.
+		flush_interval -1
+	}
+}
