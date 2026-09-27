@@ -16,8 +16,10 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 echo "==> System packages"
+# Stops iptables-persistent's install prompt from blocking; the rules are saved below.
+export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q docker.io git curl debian-keyring debian-archive-keyring apt-transport-https netfilter-persistent
+apt-get install -y -q docker.io git curl debian-keyring debian-archive-keyring apt-transport-https iptables-persistent
 if ! command -v caddy >/dev/null; then
   curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
     | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
