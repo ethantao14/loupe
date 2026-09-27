@@ -20,9 +20,12 @@ PERSONAL_LIMIT_DETAIL = (
 
 def client_ip(request: Request) -> str:
     if config.TRUST_PROXY:
-        forwarded = request.headers.get("x-forwarded-for", "")
-        if forwarded.strip():
-            return forwarded.rsplit(",", 1)[-1].strip()
+        # A proxy may append a separate header line, and only the last value
+        # anywhere is ours, so join every line in order before choosing it.
+        forwarded = ",".join(request.headers.getlist("x-forwarded-for"))
+        addresses = [address.strip() for address in forwarded.split(",") if address.strip()]
+        if addresses:
+            return addresses[-1]
     return request.client.host if request.client else "unknown"
 
 

@@ -184,6 +184,17 @@ def test_client_ip(
     assert limits.client_ip(request) == expected
 
 
+def test_client_ip_uses_the_proxy_value_across_separate_header_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(config, "TRUST_PROXY", True)
+    # The client sent the first line; the proxy appended the second.
+    headers = [(b"x-forwarded-for", b"198.51.100.1"), (b"x-forwarded-for", b"192.0.2.8")]
+    request = Request({"type": "http", "client": ("127.0.0.1", 80), "headers": headers})
+
+    assert limits.client_ip(request) == "192.0.2.8"
+
+
 @pytest.mark.parametrize("failure", [None, "read", "connect"])
 def test_health_without_visitor(monkeypatch: pytest.MonkeyPatch, failure: str | None) -> None:
     database = Mock()
