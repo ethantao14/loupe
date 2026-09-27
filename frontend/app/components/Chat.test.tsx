@@ -1,9 +1,10 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Conversation, Memory, Message, SendResult, Step, StreamHandlers } from "@/lib/api";
 
+import { suggestions } from "../demo/suggestions";
 import Chat from "./Chat";
 
 vi.mock("@/lib/api", () => ({
@@ -52,6 +53,13 @@ const traceSteps: Step[] = [
   { id: "s4", kind: "answer", tool_name: null, detail: "The page says hello." },
 ];
 
+beforeEach(() => {
+  vi.stubGlobal("localStorage", {
+    getItem: () => "true",
+    setItem: () => {},
+  });
+});
+
 describe("Chat", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -82,7 +90,7 @@ describe("Chat", () => {
     expect(document.getElementById(control.getAttribute("aria-controls") ?? "")).toContainElement(
       screen.getByRole("list", { name: "Remembered facts" }),
     );
-    const items = screen.getAllByRole("listitem");
+    const items = within(screen.getByRole("list", { name: "Remembered facts" })).getAllByRole("listitem");
     expect(items).toHaveLength(2);
     rememberedFacts.forEach((memory, index) => expect(items[index]).toHaveTextContent(memory.fact));
 
@@ -586,6 +594,42 @@ describe("conversations", () => {
       .toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: "Latest chat" })).not.toHaveAttribute("aria-current");
     expect(fetchMessages).toHaveBeenLastCalledWith("chat-1");
+  });
+
+  it("sends a suggested prompt in one click from an empty chat", async () => {
+    fetchConversations.mockResolvedValue([]);
+    fetchMessages.mockResolvedValue([]);
+    const prompt = suggestions[1].prompt;
+    completedTurn.mockResolvedValue({
+      conversation_id: "chat-new",
+      user: message("u1", "user", prompt),
+      reply: message("a1", "assistant", "2, 3, 5, 7, 11, 13, 17, 19, 23, 29"),
+    });
+    render(<Chat />);
+
+    const list = await screen.findByRole("list", { name: "Suggested prompts" });
+    expect(list.querySelectorAll("li")).toHaveLength(suggestions.length);
+    await userEvent.click(screen.getByText(prompt));
+
+    expect(streamMessage).toHaveBeenCalledExactlyOnceWith(prompt, undefined, expect.any(Object));
+    expect(await screen.findByText("2, 3, 5, 7, 11, 13, 17, 19, 23, 29")).toBeVisible();
+    expect(screen.queryByRole("list", { name: "Suggested prompts" })).not.toBeInTheDocument();
+  });
+
+  it("hides suggestions once a suggested turn is in flight", async () => {
+    fetchConversations.mockResolvedValue([]);
+    fetchMessages.mockResolvedValue([]);
+    let finish: () => void = () => {};
+    streamMessage.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    render(<Chat />);
+
+    const [first] = await screen.findAllByRole("button", { name: /Reads a web page/ });
+    await userEvent.click(first);
+
+    expect(streamMessage).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("list", { name: "Suggested prompts" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Thinking...");
+    await act(async () => { finish(); });
   });
 
   it("clears history and the draft for an unsaved new chat", async () => {

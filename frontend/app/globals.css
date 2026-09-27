@@ -228,7 +228,7 @@ samp {
     line-height: 1.5;
   }
 
-  .trace-panel + .answer-block {
+  .trace-panel + .message-content {
     margin-top: 22px;
   }
 
@@ -270,6 +270,228 @@ samp {
 
   .send-button:active:not(:disabled) {
     transform: scale(.96);
+  }
+
+  [data-replay-dimmed="true"] {
+    opacity: .18;
+    filter: saturate(.3);
+    pointer-events: none;
+  }
+
+  .replay-view {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    container-type: inline-size;
+  }
+
+  .replay-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    scroll-padding: 16px;
+  }
+
+  .replay-memory {
+    transition: opacity 250ms ease, filter 250ms ease;
+  }
+
+  .replay-controls {
+    z-index: 2;
+    flex-shrink: 0;
+    padding: 12px;
+    background: linear-gradient(0deg, var(--color-canvas), transparent);
+  }
+
+  .replay-player {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    color: var(--color-text-secondary);
+    font-size: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.3);
+  }
+
+  .replay-progress {
+    flex: 1 1 64px;
+    width: 140px;
+    max-width: 180px;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: var(--color-surface-3);
+  }
+
+  .replay-progress > span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-aurora-1), var(--color-aurora-2));
+    transition: width 150ms ease;
+  }
+
+  .tour-caption {
+    position: relative;
+    z-index: 1;
+    margin-top: 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--step-color);
+    border-radius: var(--radius-lg);
+    background-color: color-mix(in srgb, var(--color-surface-1) 96%, transparent);
+    color: var(--color-text-secondary);
+    font-size: 13px;
+    line-height: 1.5;
+    box-shadow: 0 0 30px color-mix(in srgb, var(--step-color) 20%, transparent);
+  }
+
+  .tour-caption h2 {
+    margin-bottom: 5px;
+    color: var(--step-color);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .replay-controls > .tour-caption {
+    margin: 0 0 12px;
+    max-height: 35dvh;
+    overflow: auto;
+  }
+
+  .tour-text-button,
+  .tour-continue,
+  .replay-chip {
+    cursor: pointer;
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .suggestion-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  }
+
+  .suggestion-card {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    flex-direction: column;
+    gap: 6px;
+    cursor: pointer;
+    border: 1px solid var(--color-glass-border);
+    border-left: 3px solid var(--step-color);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    text-align: left;
+  }
+
+  .suggestion-card:hover:not(:disabled) {
+    border-color: var(--step-color);
+    box-shadow: 0 0 22px color-mix(in srgb, var(--step-color) 22%, transparent);
+    transform: translateY(-1px);
+  }
+
+  .suggestion-card:disabled {
+    cursor: not-allowed;
+    opacity: .5;
+  }
+
+  .suggestion-card:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  .suggestion-shows {
+    color: var(--step-color);
+    font-family: var(--font-geist-mono);
+    font-size: 11px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .suggestion-prompt {
+    color: var(--color-text-primary);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .tour-text-button {
+    color: var(--color-text-secondary);
+  }
+
+  .tour-text-button:hover {
+    color: var(--color-text-primary);
+    background-color: var(--color-surface-3);
+  }
+
+  .tour-continue {
+    color: var(--color-canvas);
+    font-weight: 600;
+  }
+
+  .replay-chip {
+    border: 1px solid var(--color-glass-border);
+    background: var(--color-glass);
+    color: var(--color-text-secondary);
+  }
+
+  .replay-chip:hover {
+    border-color: var(--color-accent);
+    color: var(--color-text-primary);
+  }
+
+  .tour-text-button:focus-visible,
+  .tour-continue:focus-visible,
+  .replay-chip:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  .tour-text-button:disabled {
+    opacity: .5;
+    cursor: default;
+  }
+
+  .replay-legend {
+    max-width: 42rem;
+    font-size: 12px;
+    line-height: 1.8;
+  }
+
+  @container (min-width: 850px) {
+    .replay-narrated {
+      padding-right: 300px;
+    }
+
+    .replay-narrated .tour-caption {
+      position: absolute;
+      top: 0;
+      left: calc(100% + 20px);
+      width: 280px;
+      margin-top: 0;
+    }
+
+    .replay-narrated [data-caption-anchor="true"] {
+      min-height: 160px;
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .tour-caption {
+      animation: rise .35s ease both;
+    }
   }
 
   @supports ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {

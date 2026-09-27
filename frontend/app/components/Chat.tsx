@@ -13,88 +13,12 @@ import {
   type Conversation,
   type Memory,
   type Message,
-  type Step,
 } from "@/lib/api";
 
-const stepStyles = {
-  thinking: { label: "Thinking", badge: "text-step-thinking", color: "var(--color-step-thinking)" },
-  tool_call: { label: "Tool call", badge: "text-step-call", color: "var(--color-step-call)" },
-  tool_result: { label: "Tool result", badge: "text-step-result", color: "var(--color-step-result)" },
-  tool_error: { label: "Tool error", badge: "text-step-error", color: "var(--color-step-error)" },
-  tool_repeat: { label: "Repeated call", badge: "text-step-repeat", color: "var(--color-step-repeat)" },
-  answer: { label: "Answer", badge: "text-step-answer", color: "var(--color-step-answer)" },
-  memory: { label: "Memory", badge: "text-step-memory", color: "var(--color-step-memory)" },
-};
-
-function styleForStep(kind: string) {
-  if (Object.prototype.hasOwnProperty.call(stepStyles, kind)) {
-    return stepStyles[kind as keyof typeof stepStyles];
-  }
-  return { label: "Step", badge: "text-text-secondary", color: "var(--color-text-secondary)" };
-}
-
-function StepTrace({ steps }: { steps: Step[] }) {
-  const [expanded, setExpanded] = useState(true);
-  const traceId = useId();
-
-  return (
-    <div className="trace-panel">
-      <button
-        type="button"
-        aria-expanded={expanded}
-        aria-controls={traceId}
-        onClick={() => setExpanded((current) => !current)}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-text-secondary transition-colors duration-150 hover:bg-surface-3 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
-      >
-        <span aria-hidden="true" className="text-text-muted">
-          {expanded ? "▾" : "▸"}
-        </span>
-        {expanded ? "Hide" : "Show"} reasoning ({steps.length}{" "}
-        {steps.length === 1 ? "step" : "steps"})
-      </button>
-      <div hidden={!expanded} className="trace-scroll max-h-[32rem] overflow-y-auto">
-        <ol
-          id={traceId}
-          hidden={!expanded}
-          aria-label="Reasoning steps"
-          className="step-timeline"
-        >
-          {steps.map((step, index) => {
-            const style = styleForStep(step.kind);
-            return (
-              <li
-                key={step.id}
-                className="trace-step glass-surface relative min-w-0"
-                style={{
-                  "--step-color": style.color,
-                  animationDelay: `${Math.min(index * 80, 320)}ms`,
-                } as CSSProperties}
-              >
-                <span aria-hidden="true" className="step-node" />
-                <div className="step-kind flex flex-wrap items-center gap-x-2">
-                  <span className="sr-only">{index + 1}.</span>
-                  <span className={style.badge}>
-                    {style.label}
-                  </span>
-                  {step.tool_name ? (
-                    <span className="break-all">{step.tool_name}</span>
-                  ) : null}
-                </div>
-                <pre
-                  tabIndex={0}
-                  aria-label={`Step ${index + 1}: ${style.label} detail`}
-                  className="step-detail max-h-48 overflow-auto whitespace-pre-wrap break-words focus-visible:outline-2 focus-visible:outline-accent"
-                >
-                  {step.detail}
-                </pre>
-              </li>
-            );
-          })}
-        </ol>
-      </div>
-    </div>
-  );
-}
+import { suggestions } from "../demo/suggestions";
+import MessageView, { styleForStep } from "./MessageView";
+import ReplayTour from "./ReplayTour";
+import { useReplayTour } from "./useReplayTour";
 
 function MemoryPanel({ refreshToken }: { refreshToken: number }) {
   const [expanded, setExpanded] = useState(false);
@@ -243,7 +167,9 @@ export default function Chat() {
   } | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [isUpdatingConversation, setIsUpdatingConversation] = useState(false);
-  const sidebarDisabled = isSending || isUpdatingConversation;
+  const composerRef = useRef<HTMLInputElement>(null);
+  const { session, startReplay, endReplay } = useReplayTour(composerRef);
+  const sidebarDisabled = isSending || isUpdatingConversation || session !== null;
   const loadSequence = useRef(0);
   const conversationSequence = useRef(0);
 
@@ -340,7 +266,10 @@ export default function Chat() {
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    const content = draft.trim();
+    await sendContent(draft.trim());
+  }
+
+  async function sendContent(content: string) {
     if (!content || sidebarDisabled || isLoading) return;
 
     setDraft("");
@@ -392,7 +321,7 @@ export default function Chat() {
 
   return (
     <div className="chat-shell flex h-dvh min-w-0 overflow-hidden bg-canvas text-text-primary">
-      <aside className="chat-sidebar glass-surface flex w-28 shrink-0 flex-col border-r border-glass-border p-2 min-[480px]:w-56 sm:w-64 sm:p-4">
+      <aside inert={session !== null} data-replay-dimmed={session !== null} className="chat-sidebar glass-surface flex w-28 shrink-0 flex-col border-r border-glass-border p-2 min-[480px]:w-56 sm:w-64 sm:p-4">
         <button
           type="button"
           onClick={() => void selectConversation()}
@@ -531,6 +460,14 @@ export default function Chat() {
         <header className="chat-header flex shrink-0 flex-wrap items-center gap-2.5 px-3 py-5 sm:px-7">
           <span aria-hidden="true" className="brand-mark" />
           <h1 className="brand-name">Loupe</h1>
+          <button
+            type="button"
+            onClick={() => startReplay("memory-and-fetch")}
+            disabled={isSending || isUpdatingConversation}
+            className="tour-text-button ml-auto"
+          >
+            Take the tour
+          </button>
           {isSending && provisional ? (
             <span className="live-indicator">
               <span aria-hidden="true" className="live-dot" />
@@ -539,42 +476,59 @@ export default function Chat() {
           ) : null}
         </header>
 
-        <div className="message-list min-h-0 flex-1 space-y-6 overflow-y-auto px-3 pb-7 pt-1 sm:px-7 [overflow-wrap:anywhere]">
+        <div hidden={session !== null} className="message-list min-h-0 flex-1 space-y-6 overflow-y-auto px-3 pb-7 pt-1 sm:px-7 [overflow-wrap:anywhere]">
           <MemoryPanel refreshToken={memoryVersion} />
           {isLoading ? <p className="text-sm text-text-secondary">Loading conversation...</p> : null}
-          {messages.length === 0 && !provisional && !error && !isLoading ? (
-            <p className="text-sm text-text-secondary">Start the conversation below.</p>
+          {messages.length === 0 && !provisional && !isLoading ? (
+            <div className="max-w-2xl space-y-3">
+              <p className="text-sm text-text-secondary">Start the conversation below.</p>
+              <p className="text-sm text-text-secondary">Not sure what to ask? Try one of these.</p>
+              <ul aria-label="Suggested prompts" className="suggestion-grid">
+                {suggestions.map((suggestion) => (
+                  <li key={suggestion.prompt}>
+                    <button
+                      type="button"
+                      className="suggestion-card glass-surface"
+                      style={{ "--step-color": styleForStep(suggestion.kind).color } as CSSProperties}
+                      disabled={sidebarDisabled}
+                      onClick={() => void sendContent(suggestion.prompt)}
+                    >
+                      <span className="suggestion-shows">{suggestion.shows}</span>
+                      <span className="suggestion-prompt">{suggestion.prompt}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="pt-2 text-sm text-text-secondary">Or watch an example</p>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="replay-chip" onClick={() => startReplay("run-python")}>
+                  Watch: running Python
+                </button>
+                <button type="button" className="replay-chip" onClick={() => startReplay("failure-recovery")}>
+                  Watch: recovering from a failure
+                </button>
+              </div>
+            </div>
           ) : null}
           {[...messages, ...(provisional ? [provisional] : [])].map((message) => (
-            <div
-              key={message.id}
-              data-streaming={message === provisional && isSending}
-              className={`max-w-2xl min-w-0 ${
-                message.role === "user" ? "message-user" : "message-assistant"
-              }`}
-            >
-              <p className="sr-only">
-                {message.role}
-              </p>
-              {message === provisional && !message.content && message.steps.length === 0 ? (
-                <p role="status" className="thinking-indicator text-sm">Thinking...</p>
-              ) : null}
-              {message.role === "assistant" && message.steps.length > 0 ? (
-                <StepTrace steps={message.steps} />
-              ) : null}
-              {message.content ? (
-                <p className={message.role === "user" ? "question whitespace-pre-wrap" : "answer-block whitespace-pre-wrap"}>
-                  {message.content}
-                </p>
-              ) : null}
-            </div>
+            <MessageView key={message.id} message={message} streaming={message === provisional && isSending} />
           ))}
           {error ? <p className="text-sm text-step-error">{error}</p> : null}
         </div>
 
-        <form onSubmit={handleSubmit} className="composer glass-surface shrink-0 border-t border-glass-border px-3 py-4 sm:px-7">
+        {session ? (
+          <ReplayTour
+            key={session.key}
+            replayId={session.id}
+            onClose={endReplay}
+            memoryPanel={<MemoryPanel refreshToken={memoryVersion} />}
+          />
+        ) : null}
+
+        <form hidden={session !== null} onSubmit={handleSubmit} className="composer glass-surface shrink-0 border-t border-glass-border px-3 py-4 sm:px-7">
           <div className="flex max-w-2xl flex-wrap gap-3">
             <input
+              ref={composerRef}
               aria-label="Message"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
