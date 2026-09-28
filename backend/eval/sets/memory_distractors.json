@@ -1,0 +1,182 @@
+{
+  "description": "Self-authored sanity check, not a benchmark: the 12 v1 facts plus 31 distractors, several sharing a name or topic with a v1 fact, and queries that hinge on exact names, codes and numbers. Written alongside the code it tests.",
+  "facts": [
+    "The user's dog is named Biscuit and she is a corgi.",
+    "The user's cat is named Mochi and he is a tabby.",
+    "The user is a CMU Information Systems undergraduate.",
+    "The user's brother also attends CMU, studying mechanical engineering.",
+    "The user prefers TypeScript over JavaScript for frontend work.",
+    "The user writes backend services in Python with FastAPI.",
+    "The user is allergic to shellfish.",
+    "The user is lactose intolerant but still drinks oat milk lattes.",
+    "The user's favourite coffee shop is Commonplace on Forbes.",
+    "The user dislikes meetings before 10am.",
+    "The user is training for a half marathon in October.",
+    "The user's laptop is a MacBook Pro with an M3 chip.",
+    "The user's sister is named Priya and works as a nurse in Boston.",
+    "The user's manager at the internship is named Dana Whitfield.",
+    "The user's Wi-Fi network is called Biscuit5G.",
+    "The user's GitHub username is ethantao14.",
+    "The user's apartment is on the fourth floor of a building on Walnut Street.",
+    "The user takes the 61C bus to campus.",
+    "The user's favourite book is Project Hail Mary.",
+    "The user plays pickup basketball on Sunday mornings.",
+    "The user is learning Korean on Duolingo.",
+    "The user's dentist appointment is on November 3.",
+    "The user's car is a 2014 Honda Civic.",
+    "The user's student ID ends in 4471.",
+    "The user uses Neovim with the LazyVim configuration.",
+    "The user's thesis advisor is Professor Hendricks.",
+    "The user dislikes cilantro.",
+    "The user's usual coffee order is a cortado.",
+    "The user deploys side projects to Vercel.",
+    "The user's AWS account uses the us-east-1 region.",
+    "The user's dog Biscuit is due for a vaccine in December.",
+    "The user's cat Mochi only eats salmon flavoured food.",
+    "The user's brother Kevin plays the cello.",
+    "The user drinks green tea in the afternoon.",
+    "The user bought new Hoka running shoes in August.",
+    "The user's laptop charger is a 96W USB-C adapter.",
+    "The user prefers dark mode in every editor.",
+    "The user's favourite language for quick scripts is Python.",
+    "The user's standing meeting with the research lab is Tuesday at 2pm.",
+    "The user's allergist is Dr. Okafor.",
+    "The user grew up in Columbus, Ohio.",
+    "The user's phone is a Pixel 8.",
+    "The user's monitor is a 27 inch Dell U2723QE."
+  ],
+  "cases": [
+    {
+      "query": "what breed is my dog",
+      "target": 0
+    },
+    {
+      "query": "what kind of cat do I have",
+      "target": 1
+    },
+    {
+      "query": "which of my pets is a corgi",
+      "target": 0
+    },
+    {
+      "query": "where do I study",
+      "target": 2
+    },
+    {
+      "query": "what does my sibling study",
+      "target": 3
+    },
+    {
+      "query": "which language for the UI layer",
+      "target": 4
+    },
+    {
+      "query": "what do I build APIs with",
+      "target": 5
+    },
+    {
+      "query": "can I eat shrimp",
+      "target": 6
+    },
+    {
+      "query": "is regular milk a problem for me",
+      "target": 7
+    },
+    {
+      "query": "where do I get coffee",
+      "target": 8
+    },
+    {
+      "query": "is 9am ok for a call",
+      "target": 9
+    },
+    {
+      "query": "how is my running going",
+      "target": 10
+    },
+    {
+      "query": "what computer do I use",
+      "target": 11
+    },
+    {
+      "query": "what is Biscuit5G",
+      "target": 14
+    },
+    {
+      "query": "what is my GitHub username",
+      "target": 15
+    },
+    {
+      "query": "where does the 61C take me",
+      "target": 17
+    },
+    {
+      "query": "who is Dana Whitfield",
+      "target": 13
+    },
+    {
+      "query": "who is Professor Hendricks",
+      "target": 25
+    },
+    {
+      "query": "what does Mochi eat",
+      "target": 31
+    },
+    {
+      "query": "what instrument does Kevin play",
+      "target": 32
+    },
+    {
+      "query": "who is Dr. Okafor",
+      "target": 39
+    },
+    {
+      "query": "what is the U2723QE",
+      "target": 42
+    },
+    {
+      "query": "which of my IDs ends in 4471",
+      "target": 23
+    },
+    {
+      "query": "do I use LazyVim",
+      "target": 24
+    },
+    {
+      "query": "when is my dog's vaccine due",
+      "target": 30
+    },
+    {
+      "query": "what coffee do I usually order",
+      "target": 27
+    },
+    {
+      "query": "what do I drink in the afternoon",
+      "target": 33
+    },
+    {
+      "query": "when is my lab meeting",
+      "target": 38
+    },
+    {
+      "query": "where did I grow up",
+      "target": 40
+    },
+    {
+      "query": "what phone do I have",
+      "target": 41
+    },
+    {
+      "query": "which region is my AWS account in",
+      "target": 29
+    },
+    {
+      "query": "when is my dentist appointment",
+      "target": 21
+    },
+    {
+      "query": "what car do I drive",
+      "target": 22
+    }
+  ]
+}
