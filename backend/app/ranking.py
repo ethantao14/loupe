@@ -6,6 +6,8 @@ from collections.abc import Sequence
 K1 = 1.5  # Controls how quickly repeated term frequency saturates.
 B = 0.75  # Controls how strongly document length normalises term frequency.
 RRF_K = 60
+# How many ranked facts recall returns, and so how many reach the prompt.
+RECALL_TOP_K = 10
 STOP_WORDS: frozenset[str] = frozenset(
     """
     a about above after again against all also am an and any are aren as at

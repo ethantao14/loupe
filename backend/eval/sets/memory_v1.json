@@ -1,0 +1,71 @@
+{
+  "description": "Self-authored sanity check, not a benchmark: fact 0 is real; the other 11 facts were written alongside the code.",
+  "facts": [
+    "The user's dog is named Biscuit and she is a corgi.",
+    "The user's cat is named Mochi and he is a tabby.",
+    "The user is a CMU Information Systems undergraduate.",
+    "The user's brother also attends CMU, studying mechanical engineering.",
+    "The user prefers TypeScript over JavaScript for frontend work.",
+    "The user writes backend services in Python with FastAPI.",
+    "The user is allergic to shellfish.",
+    "The user is lactose intolerant but still drinks oat milk lattes.",
+    "The user's favourite coffee shop is Commonplace on Forbes.",
+    "The user dislikes meetings before 10am.",
+    "The user is training for a half marathon in October.",
+    "The user's laptop is a MacBook Pro with an M3 chip."
+  ],
+  "cases": [
+    {
+      "query": "what breed is my dog",
+      "target": 0
+    },
+    {
+      "query": "what kind of cat do I have",
+      "target": 1
+    },
+    {
+      "query": "which of my pets is a corgi",
+      "target": 0
+    },
+    {
+      "query": "where do I study",
+      "target": 2
+    },
+    {
+      "query": "what does my sibling study",
+      "target": 3
+    },
+    {
+      "query": "which language for the UI layer",
+      "target": 4
+    },
+    {
+      "query": "what do I build APIs with",
+      "target": 5
+    },
+    {
+      "query": "can I eat shrimp",
+      "target": 6
+    },
+    {
+      "query": "is regular milk a problem for me",
+      "target": 7
+    },
+    {
+      "query": "where do I get coffee",
+      "target": 8
+    },
+    {
+      "query": "is 9am ok for a call",
+      "target": 9
+    },
+    {
+      "query": "how is my running going",
+      "target": 10
+    },
+    {
+      "query": "what computer do I use",
+      "target": 11
+    }
+  ]
+}
