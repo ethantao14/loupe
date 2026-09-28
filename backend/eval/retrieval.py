@@ -34,7 +34,10 @@ def evaluate(path: Path, dense_available: bool) -> None:
         query = case["query"]
         target = facts[case["target"]]
         bm25 = rank(query, facts)
-        systems = {"bm25": bm25}
+        # Keyword-only recall returns just the matched facts, or the newest facts
+        # when nothing matches; the facts list stands in for newest-first order.
+        matches = [(fact, score) for fact, score in bm25 if score > 0]
+        systems = {"bm25": matches or bm25}
         if dense_available:
             vector = embedding.encode_query(query)
             dense = sorted(
@@ -47,6 +50,8 @@ def evaluate(path: Path, dense_available: bool) -> None:
             )
             systems.update(dense=dense, naive_rrf=naive_rrf(bm25, dense), fused=fuse(bm25, dense))
         for name, ranking in systems.items():
+            # Recall hands the model at most RECALL_TOP_K facts, so deeper ranks never count.
+            ranking = ranking[:RECALL_TOP_K]
             position = next(
                 (index for index, (fact, _) in enumerate(ranking, start=1) if fact == target),
                 None,
@@ -56,7 +61,10 @@ def evaluate(path: Path, dense_available: bool) -> None:
 
     top_k = RECALL_TOP_K
     print(f"\n{path.stem}\n{data['description']}")
-    print(f"{'system':<12} {'top-1':>7} {'recall@3':>10} {f'recall@{top_k}':>10} {'MRR':>8}")
+    print(
+        f"{'system':<12} {'top-1':>7} {'recall@3':>10} {f'recall@{top_k}':>10} "
+        f"{f'MRR@{top_k}':>8}"
+    )
     for name, rows in results.items():
         positions = [position for position, _, _ in rows]
         total = len(rows)

@@ -65,13 +65,14 @@ The fusion has three rules that matter:
   facts.
 
 Three small query sets measure recall, run through the shipped code. The table shows how
-often the correct fact ranked first, with mean reciprocal rank in brackets:
+often the correct fact ranked first, with mean reciprocal rank over the 10 facts recall
+returns in brackets:
 
 | Set | Keyword only | Dense only | Naive fusion | Shipped fusion |
 | --- | --- | --- | --- | --- |
-| 13 queries over 12 facts | 5 (0.49) | 12 (0.96) | 7 (0.68) | 12 (0.96) |
-| 11 queries naming "the user" | 3 (0.39) | 10 (0.95) | 5 (0.60) | 10 (0.95) |
-| 33 queries over 43 facts with distractors | 22 (0.74) | 32 (0.98) | 27 (0.89) | 29 (0.93) |
+| 13 queries over 12 facts | 5 (0.48) | 12 (0.96) | 7 (0.68) | 12 (0.96) |
+| 11 queries naming "the user" | 3 (0.37) | 10 (0.95) | 5 (0.60) | 10 (0.95) |
+| 33 queries over 43 facts with distractors | 22 (0.73) | 32 (0.98) | 27 (0.88) | 29 (0.93) |
 
 Naive fusion scoring worse than dense alone is what motivated the first two rules. Even with
 them, fusion never beats dense alone on these sets, and on the distractor set it is worse.
