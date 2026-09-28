@@ -21,6 +21,14 @@ recorded turn, then lets you send a few live messages of your own.
 The Next.js frontend uses TypeScript and Tailwind CSS. A FastAPI backend calls the Anthropic
 Claude API and stores conversations, messages, trace steps and memories in Supabase Postgres.
 
+### Architecture
+
+The browser sends a message to `POST /api/messages/stream`. Memory recall ranks stored facts
+with BM25 and optional dense embeddings and fuses the two rankings. The hand written tool loop
+runs with those facts in its system prompt and streams step and delta events as the turn runs.
+When the reply succeeds, the exchange and its steps are saved in one Postgres function call,
+and the backend sends a done event carrying the saved messages and steps.
+
 The agent loop in `backend/app/agent.py` is hand written rather than delegated to an SDK
 helper. A loop hidden inside a library has no steps for Loupe to record, which would gut the
 trace. Owning the loop makes each model response and tool execution a place to record a step.
@@ -58,6 +66,12 @@ Measured over a fixed set of 13 queries against 12 stored facts, counting how of
 correct fact was retrieved: keyword only 5/13, dense only 12/13, naive fusion 7/13, and the
 shipped fusion 12/13. Naive fusion scoring worse than dense alone is what motivated the first
 rule above.
+
+```bash
+cd backend && .venv/bin/python -m eval.retrieval
+```
+
+The sets live in `backend/eval/sets/`.
 
 This is not a benchmark. Eleven of the twelve facts were written alongside the code they test,
 and a self authored set flatters the approach that produced it. Treat it as evidence that the
@@ -170,7 +184,8 @@ Each daily limit is off when unset or empty; zero blocks live messages for that 
 Counters persist in Postgres and reset at midnight UTC. Unknown conversations and invalid
 content do not consume quota. An accepted turn still counts if it later fails.
 Only enable `TRUST_PROXY` behind your own reverse proxy that appends the client address.
-The application hashes IP addresses with SHA-256 before sending them to the database.
+The application uses HMAC-SHA256 keyed with a server secret over the UTC date and IP address
+before sending the hash to the database.
 
 At Haiku 4.5 pricing of $1 per million input tokens and $5 per million output tokens,
 a typical turn with 5,000 to 10,000 input tokens costs about one cent including a short
@@ -204,16 +219,21 @@ must match the Vercel URL, or the browser's CORS check rejects every request.
 
 ## Checks
 
-The six gates are backend lint, type checking and tests, plus frontend lint, type checking
-and tests. CI runs backend tests with `-rs` so a skipped test cannot be mistaken for a passing one.
+The seven gates are backend lint, type checking and tests, plus frontend lint, type checking,
+tests and a production build. CI runs backend tests with `-rs` so a skipped test cannot be
+mistaken for a passing one.
 
 ```bash
-cd backend  && .venv/bin/ruff check . && .venv/bin/mypy app && .venv/bin/pytest
-cd frontend && npm run lint && npm run typecheck && npm run test
+cd backend  && .venv/bin/ruff check . && .venv/bin/mypy app && .venv/bin/pytest -rs
+cd frontend && npm run lint && npm run typecheck && npm run test && npm run build
 ```
 
 ## Known limits
 
+- BM25 does no Unicode normalisation or word segmentation, so it cannot match inside Chinese
+  or Japanese text. Dense recall still can.
+- Dense recall scores every stored vector in Python. This is exact and fine for a personal
+  memory store of hundreds of facts, not for millions.
 - Fetch timeouts bound inactivity, not total duration, so a server trickling headers can hold
   a request worker.
 - Stored facts are injected into later prompts, so a prompt injected page could plant one.
