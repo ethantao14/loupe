@@ -55,27 +55,39 @@ rank fusion. Without the model or stored vectors, recall uses BM25. When no term
 dense recall is unavailable, it falls back to recent facts. Selected facts become context in
 the next model request, and a `memory` step records what was recalled.
 
-The fusion has two rules that matter:
+The fusion has three rules that matter:
 
 - A zero BM25 score does not vote. Its tie order is just insertion order, so letting it vote
   buries correct dense hits.
+- A term found in every fact does not count. Stored facts all start "The user", so without
+  this rule a query mentioning the user gave every fact a vote.
 - Each fact votes once per ranker. Duplicates would otherwise outrank better placed unique
   facts.
 
-Measured over a fixed set of 13 queries against 12 stored facts, counting how often the
-correct fact was retrieved: keyword only 5/13, dense only 12/13, naive fusion 7/13, and the
-shipped fusion 12/13. Naive fusion scoring worse than dense alone is what motivated the first
-rule above.
+Three small query sets measure recall, run through the shipped code. The table shows how
+often the correct fact ranked first, with mean reciprocal rank in brackets:
+
+| Set | Keyword only | Dense only | Naive fusion | Shipped fusion |
+| --- | --- | --- | --- | --- |
+| 13 queries over 12 facts | 5 (0.49) | 12 (0.96) | 7 (0.68) | 12 (0.96) |
+| 11 queries naming "the user" | 3 (0.39) | 10 (0.95) | 5 (0.60) | 10 (0.95) |
+| 33 queries over 43 facts with distractors | 22 (0.74) | 32 (0.98) | 27 (0.89) | 29 (0.93) |
+
+Naive fusion scoring worse than dense alone is what motivated the first two rules. Even with
+them, fusion never beats dense alone on these sets, and on the distractor set it is worse.
+With RRF's k of 60 and only a few dozen candidates, a fact matched by both rankers outranks
+any fact only dense found, so a keyword hit on a topical word, such as "coffee" in a question
+about where to buy it, can pull a related but wrong fact to the top. BM25 still carries recall
+when the embedding model is not installed.
+
+This is not a benchmark. Apart from one real fact, every fact and query was written alongside
+the code it tests, and a self authored set flatters the approach that produced it. Treat the
+numbers as evidence of how the rankers behave, not as a score. To rerun them, with the sets in
+`backend/eval/sets/`:
 
 ```bash
 cd backend && .venv/bin/python -m eval.retrieval
 ```
-
-The sets live in `backend/eval/sets/`.
-
-This is not a benchmark. Eleven of the twelve facts were written alongside the code they test,
-and a self authored set flatters the approach that produced it. Treat it as evidence that the
-approach works and that the fusion rules are necessary, not as a score.
 
 ## Sandboxing
 
