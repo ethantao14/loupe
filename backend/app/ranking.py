@@ -3,8 +3,13 @@ import re
 from collections import Counter
 from collections.abc import Sequence
 
-K1 = 1.5  # Controls how quickly repeated term frequency saturates.
-B = 0.75  # Controls how strongly document length normalises term frequency.
+# Common BM25 literature defaults; K1 is in the usual 1.2 to 2.0 range.
+# One-sentence facts rarely repeat terms, so saturation and length normalisation matter little.
+K1 = 1.5
+B = 0.75
+# From Cormack, Clarke and Buttcher (SIGIR 2009), tuned on long result lists. With a
+# dozen candidates 1/61 and 1/72 are close, so a fact's fused score depends mostly on
+# how many rankers voted for it.
 RRF_K = 60
 # How many ranked facts recall returns, and so how many reach the prompt.
 RECALL_TOP_K = 10
@@ -31,9 +36,10 @@ STOP_WORDS: frozenset[str] = frozenset(
 def tokenize(text: str) -> list[str]:
     """Lowercase, split on non-alphanumeric characters, and drop common English words.
 
-    Unicode letters and numbers are kept; there is no stemming or synonym expansion.
+    Unicode letters and numbers are kept, without Unicode normalisation, stemming, or
+    synonym expansion. Chinese and Japanese text becomes one token per unspaced run,
+    so BM25 cannot match inside those runs.
     """
-    # Drop all single-character tokens, including digits; keep longer numeric tokens.
     return [
         token
         for token in re.split(r"[\W_]+", text.lower())
@@ -43,6 +49,8 @@ def tokenize(text: str) -> list[str]:
 
 def rank(query: str, documents: Sequence[str]) -> list[tuple[str, float]]:
     """Score with BM25, preserving input order for ties, including zero scores."""
+    # Repeated query terms count once; short conversational queries rarely repeat one
+    # on purpose.
     terms = sorted(set(tokenize(query)))
     if not documents or not terms:
         return [(document, 0.0) for document in documents]
@@ -56,6 +64,9 @@ def rank(query: str, documents: Sequence[str]) -> list[tuple[str, float]]:
     document_frequency: Counter[str] = Counter()
     for frequency in frequencies:
         document_frequency.update(frequency.keys())
+    # Lucene-style log(1 + (N - df + 0.5) / (df + 0.5)) is non-negative, unlike
+    # classic Robertson-Sparck Jones IDF. Ubiquitous terms still get positive IDF,
+    # so scoring excludes them to avoid votes with no discriminating signal.
     idf = {
         term: math.log1p(
             (len(documents) - document_frequency[term] + 0.5) / (document_frequency[term] + 0.5)
@@ -95,6 +106,11 @@ def fuse(
     dense: Sequence[tuple[str, float]],
     k: int = RRF_K,
 ) -> list[tuple[str, float]]:
+    """Fuse ranks: zero BM25 scores do not vote; duplicates vote once per ranker.
+
+    Ties keep first-vote order: positive BM25 hits first, then dense-only hits,
+    each in its ranker's order.
+    """
     scores: dict[str, float] = {}
     for position, (fact, score) in enumerate(_first_occurrences(bm25), start=1):
         # A zero BM25 score is not a ranking signal: its tie order is just
