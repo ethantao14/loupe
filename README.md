@@ -234,6 +234,9 @@ cd frontend && npm run lint && npm run typecheck && npm run test && npm run buil
   or Japanese text. Dense recall still can.
 - Dense recall scores every stored vector in Python. This is exact and fine for a personal
   memory store of hundreds of facts, not for millions.
+- The backend's service user is in the `docker` group so it can start sandbox containers,
+  which is equivalent to root on that host. Rootless Docker or gVisor would be the stronger
+  boundary; the containers themselves run as an unprivileged user with no capabilities.
 - Fetch timeouts bound inactivity, not total duration, so a server trickling headers can hold
   a request worker.
 - Stored facts are injected into later prompts, so a prompt injected page could plant one.
