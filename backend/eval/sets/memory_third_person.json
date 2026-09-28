@@ -1,0 +1,63 @@
+{
+  "description": "Self-authored sanity check targeting ubiquitous query terms that gave BM25 votes without discriminating between facts.",
+  "facts": [
+    "The user's dog is named Biscuit and she is a corgi.",
+    "The user's cat is named Mochi and he is a tabby.",
+    "The user is a CMU Information Systems undergraduate.",
+    "The user's brother also attends CMU, studying mechanical engineering.",
+    "The user prefers TypeScript over JavaScript for frontend work.",
+    "The user writes backend services in Python with FastAPI.",
+    "The user is allergic to shellfish.",
+    "The user is lactose intolerant but still drinks oat milk lattes.",
+    "The user's favourite coffee shop is Commonplace on Forbes.",
+    "The user dislikes meetings before 10am.",
+    "The user is training for a half marathon in October.",
+    "The user's laptop is a MacBook Pro with an M3 chip."
+  ],
+  "cases": [
+    {
+      "query": "what does the user drink",
+      "target": 7
+    },
+    {
+      "query": "what breed is the user's dog",
+      "target": 0
+    },
+    {
+      "query": "what kind of cat does the user have",
+      "target": 1
+    },
+    {
+      "query": "where does the user study",
+      "target": 2
+    },
+    {
+      "query": "what does the user's sibling study",
+      "target": 3
+    },
+    {
+      "query": "what does the user build APIs with",
+      "target": 5
+    },
+    {
+      "query": "can the user eat shrimp",
+      "target": 6
+    },
+    {
+      "query": "where does the user get coffee",
+      "target": 8
+    },
+    {
+      "query": "is 9am ok for a call with the user",
+      "target": 9
+    },
+    {
+      "query": "how is the user's running going",
+      "target": 10
+    },
+    {
+      "query": "what computer does the user use",
+      "target": 11
+    }
+  ]
+}

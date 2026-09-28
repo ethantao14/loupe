@@ -116,3 +116,22 @@ def test_fusion_counts_a_repeated_fact_once() -> None:
     assert result[0][0] == "Has a corgi"
     assert [fact for fact, _ in result] == ["Has a corgi", "Uses Python"]
     assert result[1][1] == 1 / 62
+
+
+def test_ubiquitous_term_scores_zero() -> None:
+    facts = ["The user drinks lattes", "The user avoids shellfish"]
+    assert rank("user", facts) == [(fact, 0.0) for fact in facts]
+
+
+def test_ubiquitous_term_does_not_change_discriminating_scores() -> None:
+    facts = ["The user drinks lattes", "The user avoids shellfish"]
+    result = rank("user lattes", facts)
+    assert result == rank("lattes", facts)
+    assert result[0][1] > 0
+    assert result[1][1] == 0
+
+
+def test_ubiquitous_term_does_not_demote_dense_hit() -> None:
+    facts = ["The user avoids shellfish", "The user drinks oat milk lattes"]
+    dense = [(facts[1], 0.9), (facts[0], 0.1)]
+    assert fuse(rank("what does the user drink", facts), dense)[0][0] == facts[1]

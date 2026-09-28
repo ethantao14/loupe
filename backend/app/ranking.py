@@ -70,7 +70,7 @@ def rank(query: str, documents: Sequence[str]) -> list[tuple[str, float]]:
             (
                 idf[term] * frequency[term] * (K1 + 1) / (frequency[term] + normalisation)
                 for term in terms
-                if frequency[term]
+                if frequency[term] and document_frequency[term] < len(documents)
             ),
             start=0.0,
         )
