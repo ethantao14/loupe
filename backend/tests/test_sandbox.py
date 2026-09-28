@@ -199,7 +199,10 @@ def test_limit_signal_is_reported():
 
 
 @pytest.mark.usefixtures("execution_backend")
-def test_memory_limit_is_enforced() -> None:
+def test_memory_limit_is_enforced(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The wall clock includes container startup, which on a cold CI runner can
+    # outlast the default and report a timeout instead of the memory kill.
+    monkeypatch.setattr(sandbox, "WALL_TIMEOUT_SECONDS", 30)
     result = sandbox.run_python("data = bytearray(1024 * 1024 * 1024)")
 
     assert result.output.startswith("Error: Python was killed by SIGKILL")
