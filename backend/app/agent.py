@@ -7,7 +7,8 @@ from anthropic.types import MessageParam, ToolResultBlockParam
 
 from app import confine, embedding, tools
 from app.config import CLAUDE_MODEL
-from app.memory import RECALL_TOP_K, MemoryStore, RecallResult
+from app.memory import MemoryStore, RecallResult
+from app.ranking import RECALL_TOP_K
 
 SYSTEM_PROMPT = (
     "You are Loupe, a helpful assistant with tools. Use a tool when it would "

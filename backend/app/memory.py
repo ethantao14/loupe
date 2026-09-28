@@ -4,9 +4,8 @@ from dataclasses import dataclass
 from supabase import Client
 
 from app import db, embedding
-from app.ranking import fuse, rank, tokenize
+from app.ranking import RECALL_TOP_K, fuse, rank, tokenize
 
-RECALL_TOP_K = 10
 MAX_MEMORY_CANDIDATES = 5000
 
 
