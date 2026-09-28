@@ -672,7 +672,7 @@ describe("conversations", () => {
     completedTurn.mockResolvedValue({
       conversation_id: "chat-new",
       user: message("u1", "user", prompt),
-      reply: message("a1", "assistant", "2, 3, 5, 7, 11, 13, 17, 19, 23, 29"),
+      reply: message("a1", "assistant", "7 comes up most often."),
     });
     render(<Chat />);
 
@@ -681,7 +681,7 @@ describe("conversations", () => {
     await userEvent.click(screen.getByText(prompt));
 
     expect(streamMessage).toHaveBeenCalledExactlyOnceWith(prompt, undefined, expect.any(Object));
-    expect(await screen.findByText("2, 3, 5, 7, 11, 13, 17, 19, 23, 29")).toBeVisible();
+    expect(await screen.findByText("7 comes up most often.")).toBeVisible();
     expect(screen.queryByRole("list", { name: "Suggested prompts" })).not.toBeInTheDocument();
   });
 
@@ -692,7 +692,7 @@ describe("conversations", () => {
     streamMessage.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
     render(<Chat />);
 
-    const [first] = await screen.findAllByRole("button", { name: /Reads a web page/ });
+    const [first] = await screen.findAllByRole("button", { name: new RegExp(suggestions[0].shows) });
     await userEvent.click(first);
 
     expect(streamMessage).toHaveBeenCalledTimes(1);
