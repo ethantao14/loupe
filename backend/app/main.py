@@ -278,8 +278,9 @@ def stream_message(
                     )
                     yield _sse_event("done", result.model_dump(mode="json"))
                     return
-        except Exception as exc:
-            yield _sse_event("error", {"detail": str(exc)})
+        except Exception:
+            logging.getLogger(__name__).exception("Streaming turn failed")
+            yield _sse_event("error", {"detail": "The turn failed. Please try again."})
 
     return StreamingResponse(
         events(),
