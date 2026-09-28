@@ -196,7 +196,9 @@ def test_failed_query_embedding_degrades_to_bm25(
 def test_available_model_without_stored_vectors_uses_bm25(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(embedding, "unavailable_reason", lambda: None)
     monkeypatch.setattr(embedding, "encode_query", Mock(return_value=[1.0]))
-    monkeypatch.setattr(db, "fetch_memories", Mock(return_value=[{"fact": "Python"}]))
+    monkeypatch.setattr(
+        db, "fetch_memories", Mock(return_value=[{"fact": "Python"}, {"fact": "Unrelated"}])
+    )
     result = MemoryStore(Mock(spec=Client), VISITOR_ID).recall_relevant("Python")
     assert result.rankers == ("bm25",)
     assert result.fallback_reason is None
