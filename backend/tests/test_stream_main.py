@@ -70,8 +70,9 @@ def test_stream_unknown_conversation_rejected_before_turn(monkeypatch: pytest.Mo
     assert fake_db.rows == fake_db.steps == fake_db.conversations == []
 
 
-def test_stream_failure_escapes_detail_and_persists_nothing(
+def test_stream_failure_logs_exception_and_sends_generic_detail(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     fake_db = FakeDb()
     client = make_client(fake_db, monkeypatch)
@@ -80,7 +81,7 @@ def test_stream_failure_escapes_detail_and_persists_nothing(
     monkeypatch.setattr(db, "insert_exchange_with_steps", save)
 
     def fail(*args: object) -> Iterator[agent.TurnEvent]:
-        yield agent.StepEvent(agent.Step("thinking", detail))
+        yield agent.StepEvent(agent.Step("thinking", "Working"))
         yield agent.TextDelta("Partial answer")
         raise RuntimeError(detail)
 
@@ -88,10 +89,18 @@ def test_stream_failure_escapes_detail_and_persists_nothing(
     response = client.post("/api/messages/stream", json={"content": "Hello"})
 
     assert parse_events(response.text) == [
-        ("step", {"kind": "thinking", "tool_name": None, "detail": detail}),
+        ("step", {"kind": "thinking", "tool_name": None, "detail": "Working"}),
         ("delta", {"text": "Partial answer"}),
-        ("error", {"detail": detail}),
+        ("error", {"detail": "The turn failed. Please try again."}),
     ]
+    assert detail not in response.text
+    assert json.dumps(detail) not in response.text
+    assert detail in caplog.text
+    assert any(
+        record.name == "app.main" and record.exc_info is not None
+        and record.message == "Streaming turn failed"
+        for record in caplog.records
+    )
     save.assert_not_called()
     assert fake_db.rows == fake_db.steps == fake_db.conversations == []
 
@@ -106,7 +115,7 @@ def test_stream_save_failure_emits_error_without_done(monkeypatch: pytest.Monkey
 
     events = parse_events(response.text)
     assert [name for name, _ in events] == ["delta", "delta", "step", "error"]
-    assert events[-1] == ("error", {"detail": "Save failed"})
+    assert events[-1] == ("error", {"detail": "The turn failed. Please try again."})
     save.assert_called_once()
     assert fake_db.rows == fake_db.steps == fake_db.conversations == []
 
