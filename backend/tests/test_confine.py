@@ -65,6 +65,18 @@ def test_tcp_connection_fails(confined_host: None) -> None:
     assert result.output == "network blocked\n"
 
 
+def test_code_runs_unprivileged(confined_host: None) -> None:
+    result = sandbox.run_python(
+        "import os\n"
+        "print(os.getuid(), os.getgid())\n"
+        "for line in open('/proc/self/status'):\n"
+        "    if line.startswith(('CapEff:', 'NoNewPrivs:')):\n"
+        "        print(line.split()[1])\n"
+    )
+    # Effective capabilities are all zero, and privileges cannot be regained.
+    assert result.output.splitlines() == ["65534 65534", "0000000000000000", "1"]
+
+
 def test_working_directory_is_readable_and_writable(confined_host: None) -> None:
     result = sandbox.run_python(
         "from pathlib import Path\n"
@@ -167,10 +179,13 @@ def test_docker_prefix_and_successful_probe_are_cached(
         ("--pids-limit", str(confine.DOCKER_PIDS_LIMIT)),
         ("--name", directory.name),
         ("-w", "/work"),
+        ("--user", confine.DOCKER_USER),
+        ("--cap-drop", "ALL"),
+        ("--security-opt", "no-new-privileges"),
     ]:
         assert prefix[prefix.index(flag) + 1] == value
     assert "--read-only" in prefix
-    assert f"/work:size={confine.DOCKER_TMPFS_SIZE},exec" in prefix
+    assert f"/work:size={confine.DOCKER_TMPFS_SIZE},exec,mode=1777" in prefix
     assert f"/tmp:size={confine.DOCKER_TMPFS_SIZE}" in prefix
     # No host path is mounted into the container.
     assert "-v" not in prefix

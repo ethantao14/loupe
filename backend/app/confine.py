@@ -1,7 +1,8 @@
 """Required Docker confinement for Python execution.
 
-No host filesystem is mounted. The container has no network, a read-only root
-filesystem, and memory, CPU and process caps.
+No host filesystem is mounted. Code runs as an unprivileged user with no Linux
+capabilities, and the container has no network, a read-only root filesystem,
+and memory, CPU and process caps.
 A failed container launch never triggers an unconfined retry.
 """
 
@@ -16,6 +17,7 @@ DOCKER_IMAGE = "python:3.13-slim"
 DOCKER_MEMORY = "512m"
 DOCKER_CPUS = "1"
 DOCKER_PIDS_LIMIT = 64
+DOCKER_USER = "65534:65534"  # nobody:nogroup, so executed code is not root in the container.
 # A cold daemon's first call routinely takes several seconds, and a timeout is
 # cached, so too tight a bound silently withholds the tool for the whole process.
 DOCKER_TIMEOUT_SECONDS = 10
@@ -128,6 +130,14 @@ def command_prefix(directory: str) -> list[str]:
         # Docker injects proxy settings from client config, which can carry
         # credentials. Blank them so executed code cannot read them.
         *_blank_proxy_arguments(),
+        # Defence in depth against a container escape: no root, no Linux
+        # capabilities, and no way to regain privileges through setuid binaries.
+        "--user",
+        DOCKER_USER,
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
         "--memory",
         DOCKER_MEMORY,
         # Without an explicit swap total Docker grants an equal amount of swap,
@@ -142,9 +152,10 @@ def command_prefix(directory: str) -> list[str]:
         "--tmpfs",
         f"/tmp:size={DOCKER_TMPFS_SIZE}",
         # A tmpfs rather than a host mount, so writes are bounded, nothing from
-        # the host is reachable, and no files are left behind to clean up.
+        # the host is reachable, and no files are left behind to clean up. A new
+        # tmpfs is owned by root, so it must be world writable for the non-root user.
         "--tmpfs",
-        f"/work:size={DOCKER_TMPFS_SIZE},exec",
+        f"/work:size={DOCKER_TMPFS_SIZE},exec,mode=1777",
         "-w",
         "/work",
         DOCKER_IMAGE,
@@ -207,7 +218,8 @@ def describe() -> str:
     if probe.reason is not None:
         return f"Docker unavailable: {probe.reason}; code execution is not offered"
     return (
-        f"Docker ({DOCKER_IMAGE}): no host filesystem, no network, read-only root; "
+        f"Docker ({DOCKER_IMAGE}): non-root, no capabilities, no host filesystem, "
+        "no network, read-only root; "
         f"writes bounded to {DOCKER_TMPFS_SIZE}; memory {DOCKER_MEMORY}, CPUs {DOCKER_CPUS}, "
         f"processes {DOCKER_PIDS_LIMIT}"
     )
