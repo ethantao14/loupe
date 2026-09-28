@@ -19,8 +19,8 @@ DOCKER_PIDS_LIMIT = 64
 # A cold daemon's first call routinely takes several seconds, and a timeout is
 # cached, so too tight a bound silently withholds the tool for the whole process.
 DOCKER_TIMEOUT_SECONDS = 10
-DOCKER_PULL_TIMEOUT_SECONDS = 300
-REMOVE_ATTEMPTS = 3  # A first pull is slow, and happens once.
+DOCKER_PULL_TIMEOUT_SECONDS = 300  # A first pull is slow, and happens once.
+REMOVE_ATTEMPTS = 3
 
 
 class Probe(NamedTuple):
