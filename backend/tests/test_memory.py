@@ -51,7 +51,7 @@ def test_relevance_returns_best_matches_instead_of_newest(monkeypatch):
         (None, "no usable query text"),
         ("", "no usable query text"),
         ("  ", "no usable query text"),
-        ("the and !", "no usable query text"),
+        ("the and !", "no matching terms"),
     ],
 )
 def test_relevance_falls_back_to_recency(monkeypatch, query, reason):
@@ -133,7 +133,10 @@ def test_relevance_paginates_candidates_up_to_cap():
     ]
 
 
-def test_dense_recall_without_lexical_matches(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("query", ["what breed is my dog", "who am I?"])
+def test_dense_recall_without_lexical_matches(
+    monkeypatch: pytest.MonkeyPatch, query: str
+) -> None:
     monkeypatch.setattr(embedding, "unavailable_reason", lambda: None)
     encode = Mock(return_value=[1.0, 0.0])
     monkeypatch.setattr(embedding, "encode_query", encode)
@@ -148,13 +151,13 @@ def test_dense_recall_without_lexical_matches(monkeypatch: pytest.MonkeyPatch) -
         ),
     )
     result = MemoryStore(Mock(spec=Client), VISITOR_ID).recall_relevant(
-        "what breed is my dog", limit=1
+        query, limit=1
     )
     assert result.selected[0][0] == "Has a corgi"
     assert result.rankers == ("dense",)
     assert result.fallback_reason is None
     assert result.candidate_count == 2
-    encode.assert_called_once_with("what breed is my dog")
+    encode.assert_called_once_with(query)
 
 
 def test_unembedded_facts_participate_through_bm25(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -224,7 +227,7 @@ def test_remember_embeds_or_preserves_fact_on_failure(
     encode.assert_called_once_with(["Has a corgi"])
 
 
-@pytest.mark.parametrize("query, limit", [("dog", 0), (None, 2), ("the and", 2)])
+@pytest.mark.parametrize("query, limit", [("dog", 0), (None, 2), ("", 2), ("  ", 2)])
 def test_early_returns_skip_rankers(
     monkeypatch: pytest.MonkeyPatch,
     query: str | None,

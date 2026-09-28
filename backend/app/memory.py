@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from supabase import Client
 
 from app import db, embedding
-from app.ranking import RECALL_TOP_K, fuse, rank, tokenize
+from app.ranking import RECALL_TOP_K, fuse, rank
 
 MAX_MEMORY_CANDIDATES = 5000
 
@@ -40,7 +40,7 @@ class MemoryStore:
             return RecallResult([], 0)
         memories = db.fetch_memories(self.client, self.visitor_id, MAX_MEMORY_CANDIDATES)
         facts = [memory["fact"] for memory in memories]
-        if not query or not tokenize(query):
+        if not query or not query.strip():
             return RecallResult(
                 [(fact, 0.0) for fact in facts[:limit]], len(facts), "no usable query text"
             )
