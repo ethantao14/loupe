@@ -2,9 +2,9 @@
 
 import { useId, useState, type CSSProperties, type ReactNode } from "react";
 
-import type { Message, Step } from "@/lib/api";
+import type { Message, Step, StepKind } from "@/lib/api";
 
-const stepStyles = {
+const stepStyles: Record<StepKind, { label: string; badge: string; color: string }> = {
   thinking: { label: "Thinking", badge: "text-step-thinking", color: "var(--color-step-thinking)" },
   tool_call: { label: "Tool call", badge: "text-step-call", color: "var(--color-step-call)" },
   tool_result: { label: "Tool result", badge: "text-step-result", color: "var(--color-step-result)" },

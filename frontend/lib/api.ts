@@ -1,8 +1,14 @@
 import { getVisitorId } from "./visitor";
 
+export const STEP_KINDS = [
+  "thinking", "tool_call", "tool_result", "tool_error", "tool_repeat", "answer", "memory",
+] as const;
+
+export type StepKind = typeof STEP_KINDS[number];
+
 export type Step = {
   id: string;
-  kind: "thinking" | "tool_call" | "tool_result" | "tool_error" | "tool_repeat" | "answer" | "memory";
+  kind: StepKind;
   tool_name: string | null;
   detail: string;
 };
@@ -134,7 +140,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isStreamStep(value: unknown): value is StreamStep {
   return isRecord(value)
     && typeof value.kind === "string"
-    && ["thinking", "tool_call", "tool_result", "tool_error", "tool_repeat", "answer", "memory"].includes(value.kind)
+    && STEP_KINDS.some((kind) => kind === value.kind)
     && (value.tool_name === null || typeof value.tool_name === "string")
     && typeof value.detail === "string";
 }
