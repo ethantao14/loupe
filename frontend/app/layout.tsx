@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 
@@ -21,6 +21,10 @@ const instrumentSerif = Instrument_Serif({
 export const metadata: Metadata = {
   title: "Loupe",
   description: "An agent that shows its reasoning, step by step.",
+};
+
+export const viewport: Viewport = {
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

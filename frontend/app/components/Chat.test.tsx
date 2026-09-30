@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Conversation, Memory, Message, SendResult, Step, StreamHandlers } from "@/lib/api";
 
@@ -53,6 +53,128 @@ const traceSteps: Step[] = [
   { id: "s3", kind: "tool_result", tool_name: "fetch_url", detail: "Page said hello." },
   { id: "s4", kind: "answer", tool_name: null, detail: "The page says hello." },
 ];
+
+describe("mobile conversation drawer", () => {
+  let mobile = true;
+  let mediaEvents: EventTarget;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    fetchConversations.mockResolvedValue(conversations);
+    fetchMessages.mockImplementation(async (id) => [
+      message(`${id}-message`, "user", `History for ${id}`),
+    ]);
+    mobile = true;
+    mediaEvents = new EventTarget();
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      get matches() { return query === "(max-width: 767px)" && mobile; },
+      media: query,
+      addEventListener: mediaEvents.addEventListener.bind(mediaEvents),
+      removeEventListener: mediaEvents.removeEventListener.bind(mediaEvents),
+    }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function openDrawer() {
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    const menu = screen.getByRole("button", { name: "Open conversations" });
+    await userEvent.click(menu);
+    return menu;
+  }
+
+  it("opens the drawer and focuses its close button", async () => {
+    const menu = await openDrawer();
+    expect(menu).toHaveAttribute("aria-expanded", "true");
+    expect(menu).toHaveAttribute("aria-controls", "conversation-drawer");
+    expect(document.getElementById("conversation-drawer")).not.toHaveAttribute("inert");
+    expect(screen.getByRole("button", { name: "Close conversations" })).toHaveFocus();
+  });
+
+  it("closes on Escape and restores focus to the menu", async () => {
+    const menu = await openDrawer();
+    await userEvent.keyboard("{Escape}");
+    expect(menu).toHaveAttribute("aria-expanded", "false");
+    expect(menu).toHaveFocus();
+    expect(document.getElementById("conversation-drawer")).toHaveAttribute("inert");
+    expect(document.querySelector(".drawer-scrim")).toBeNull();
+  });
+
+  it.each(["Earlier chat", "New chat"])("closes when choosing %s", async (name) => {
+    const menu = await openDrawer();
+    await userEvent.click(screen.getByRole("button", { name }));
+    expect(menu).toHaveAttribute("aria-expanded", "false");
+    expect(menu).toHaveFocus();
+    expect(document.getElementById("conversation-drawer")).toHaveAttribute("inert");
+    if (name === "Earlier chat") {
+      expect(await screen.findByText("History for chat-1")).toBeVisible();
+    } else {
+      expect(await screen.findByText("Start the conversation below.")).toBeVisible();
+    }
+  });
+
+  it.each(["close button", "scrim"])("closes with the %s", async (control) => {
+    const menu = await openDrawer();
+    if (control === "close button") {
+      await userEvent.click(screen.getByRole("button", { name: "Close conversations" }));
+    } else {
+      const scrim = document.querySelector(".drawer-scrim");
+      if (!scrim) throw new Error("Drawer scrim is missing");
+      await userEvent.click(scrim);
+    }
+    expect(menu).toHaveAttribute("aria-expanded", "false");
+    expect(menu).toHaveFocus();
+  });
+
+  it.each(["Rename", "Delete"])("keeps the drawer open for %s", async (action) => {
+    const menu = await openDrawer();
+    await userEvent.click(screen.getByRole("button", { name: `${action} conversation: Latest chat` }));
+    expect(menu).toHaveAttribute("aria-expanded", "true");
+    expect(document.getElementById("conversation-drawer")).not.toHaveAttribute("inert");
+  });
+
+  it("makes the closed drawer inert only on mobile", async () => {
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    const drawer = document.getElementById("conversation-drawer");
+    expect(drawer).toHaveAttribute("inert");
+    act(() => {
+      mobile = false;
+      mediaEvents.dispatchEvent(new Event("change"));
+    });
+    expect(drawer).not.toHaveAttribute("inert");
+  });
+
+  it("clears an open drawer when resizing to desktop", async () => {
+    const menu = await openDrawer();
+    act(() => {
+      mobile = false;
+      mediaEvents.dispatchEvent(new Event("change"));
+    });
+    expect(document.querySelector(".drawer-scrim")).toBeNull();
+    expect(document.getElementById("conversation-drawer")).not.toHaveAttribute("inert");
+    expect(menu).toHaveAttribute("aria-expanded", "false");
+    act(() => {
+      mobile = true;
+      mediaEvents.dispatchEvent(new Event("change"));
+    });
+    expect(document.getElementById("conversation-drawer")).toHaveAttribute("inert");
+    expect(document.querySelector(".drawer-scrim")).toBeNull();
+  });
+
+  it("disables the menu and keeps the sidebar inert during replay", async () => {
+    render(<Chat />);
+    await screen.findByText("History for chat-2");
+    await userEvent.click(screen.getByRole("button", { name: "Take the tour" }));
+    expect(screen.getByRole("button", { name: "Open conversations" })).toBeDisabled();
+    expect(document.getElementById("conversation-drawer")).toHaveAttribute("inert");
+    expect(document.getElementById("conversation-drawer")).toHaveAttribute("data-replay-dimmed", "true");
+    await userEvent.click(screen.getByRole("button", { name: "Skip tour" }));
+  });
+});
 
 beforeEach(() => {
   vi.stubGlobal("localStorage", {

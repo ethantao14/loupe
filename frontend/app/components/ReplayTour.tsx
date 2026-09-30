@@ -1,24 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import type { Message } from "@/lib/api";
 
 import { captionForStep, closingCaption, introCaption } from "../demo/captions";
 import { getReplay, playbackSchedule, type Replay, type ReplayEvent, type ReplayId } from "../demo/replay";
 import MessageView, { styleForStep } from "./MessageView";
-
-function useMediaQuery(query: string) {
-  return useSyncExternalStore(
-    (notify) => {
-      const media = window.matchMedia?.(query);
-      media?.addEventListener("change", notify);
-      return () => media?.removeEventListener("change", notify);
-    },
-    () => window.matchMedia?.(query).matches ?? false,
-    () => false,
-  );
-}
+import { useMediaQuery } from "./useMediaQuery";
 
 function playbackFrames(replay: Replay, reducedMotion: boolean) {
   const schedule = playbackSchedule(replay);
@@ -157,7 +146,7 @@ export default function ReplayTour({ replayId, onClose, memoryPanel }: {
 
   return (
     <section className="replay-view" aria-label={narrated ? "Narrated replay" : "Example replay"}>
-      <div ref={scrollRef} className="replay-scroll message-list space-y-6 px-3 pb-7 pt-1 sm:px-7">
+      <div ref={scrollRef} className="replay-scroll message-list space-y-6 px-4 pb-7 pt-1 md:px-7">
         <div inert data-replay-dimmed={!memoryVisible} className="replay-memory">
           {memoryPanel}
         </div>
@@ -186,7 +175,7 @@ export default function ReplayTour({ replayId, onClose, memoryPanel }: {
       <div className="replay-controls">
         {narrow ? captionCard : null}
         <div className="replay-player glass-surface">
-          <span>{paused ? "Paused" : state.complete ? "Replay complete" : "Replaying a real turn"}</span>
+          <span className="replay-status">{paused ? "Paused" : state.complete ? "Replay complete" : "Replaying a real turn"}</span>
           <div className="replay-progress" role="progressbar" aria-label="Replay progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
             <span style={{ width: `${progress}%` }} />
           </div>
