@@ -17,7 +17,7 @@ export default function Composer({ hidden, composerRef, draft, setDraft, sidebar
   }
 
   return (
-    <form hidden={hidden} onSubmit={handleSubmit} className="composer glass-surface shrink-0 border-t border-glass-border px-3 py-4 sm:px-7">
+    <form hidden={hidden} onSubmit={handleSubmit} className="composer glass-surface shrink-0 border-t border-glass-border px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-7 md:pb-4">
       <div className="flex max-w-2xl flex-wrap gap-3">
         <input
           ref={composerRef}
@@ -27,7 +27,7 @@ export default function Composer({ hidden, composerRef, draft, setDraft, sidebar
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder="Ask something"
-          className="composer-input min-w-0 flex-1 rounded-md border border-glass-border bg-glass px-3 py-3 text-sm text-text-primary placeholder:text-text-secondary focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="composer-input min-w-0 flex-1 rounded-md border border-glass-border bg-glass px-3 py-3 text-base text-text-primary placeholder:text-text-secondary focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:text-sm"
         />
         <button
           type="submit"
