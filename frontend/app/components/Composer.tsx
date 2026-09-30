@@ -17,7 +17,7 @@ export default function Composer({ hidden, composerRef, draft, setDraft, sidebar
   }
 
   return (
-    <form hidden={hidden} onSubmit={handleSubmit} className="composer glass-surface shrink-0 border-t border-glass-border px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-7 md:pb-4">
+    <form hidden={hidden} onSubmit={handleSubmit} className="composer glass-surface shrink-0 border-t border-glass-border px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-7">
       <div className="flex max-w-2xl flex-wrap gap-3">
         <input
           ref={composerRef}

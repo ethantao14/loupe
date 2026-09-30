@@ -63,6 +63,8 @@ samp {
 
   .chat-shell {
     overflow-wrap: anywhere;
+    padding-right: env(safe-area-inset-right);
+    padding-left: env(safe-area-inset-left);
   }
 
   .chat-main {
@@ -301,7 +303,7 @@ samp {
   .replay-controls {
     z-index: 2;
     flex-shrink: 0;
-    padding: 12px;
+    padding: 12px 12px max(12px, env(safe-area-inset-bottom));
     background: linear-gradient(0deg, var(--color-canvas), transparent);
   }
 
@@ -562,10 +564,6 @@ samp {
     .answer-block {
       padding: 14px 16px;
       font-size: 15px;
-    }
-
-    .replay-controls {
-      padding-bottom: max(12px, env(safe-area-inset-bottom));
     }
 
     .replay-controls > .tour-caption {
