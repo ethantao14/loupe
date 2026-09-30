@@ -26,13 +26,11 @@ export default function Chat() {
 
   if (drawerOpen && (!mobile || replaying)) setDrawerOpen(false);
 
-  const closeDrawer = useCallback(() => {
-    setDrawerOpen(false);
-    if (mobile && drawerOpen) menuRef.current?.focus();
-  }, [mobile, drawerOpen]);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
   useEffect(() => {
     if (!mobile || !drawerOpen) return;
+    const menu = menuRef.current;
     closeRef.current?.focus();
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -41,7 +39,11 @@ export default function Chat() {
       }
     }
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    // Focus returns here, after the page behind the drawer stops being inert.
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      menu?.focus();
+    };
   }, [mobile, drawerOpen, closeDrawer]);
 
   return (
@@ -57,7 +59,7 @@ export default function Chat() {
         closeRef={closeRef}
         onClose={closeDrawer}
       />
-      <main className="chat-main flex min-w-0 flex-1 flex-col">
+      <main inert={mobile && drawerOpen} className="chat-main flex min-w-0 flex-1 flex-col">
         <header className="chat-header flex shrink-0 flex-wrap items-center gap-2.5 px-4 py-3 md:px-7 md:py-5">
           <button
             ref={menuRef}

@@ -92,6 +92,7 @@ describe("mobile conversation drawer", () => {
     expect(menu).toHaveAttribute("aria-controls", "conversation-drawer");
     expect(document.getElementById("conversation-drawer")).not.toHaveAttribute("inert");
     expect(screen.getByRole("button", { name: "Close conversations" })).toHaveFocus();
+    expect(document.querySelector("main")).toHaveAttribute("inert");
   });
 
   it("closes on Escape and restores focus to the menu", async () => {
@@ -101,6 +102,7 @@ describe("mobile conversation drawer", () => {
     expect(menu).toHaveFocus();
     expect(document.getElementById("conversation-drawer")).toHaveAttribute("inert");
     expect(document.querySelector(".drawer-scrim")).toBeNull();
+    expect(document.querySelector("main")).not.toHaveAttribute("inert");
   });
 
   it.each(["Earlier chat", "New chat"])("closes when choosing %s", async (name) => {
